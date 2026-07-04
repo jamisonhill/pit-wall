@@ -1,4 +1,4 @@
-<title>Pit Wall — Live F1 Telemetry (Demo)</title>
+<title>Pit Wall — Live F1 Telemetry</title>
 <style>
   :root {
     --bg:#080a0d; --bg2:#0e1116; --panel:#12161c; --panel2:#171c24;
@@ -183,7 +183,7 @@
   @media (prefers-reduced-motion: reduce){ .status .dot{ animation:none; } }
 </style>
 
-<div class="demoband">Simulated data · demo of what's possible</div>
+<div class="demoband" id="demoband">Simulated data · demo of what's possible</div>
 <div class="app">
   <header>
     <div class="brand"><div class="mark"></div><div><b>Pit&nbsp;Wall</b><small>Telemetry</small></div></div>
@@ -274,12 +274,19 @@
 <script>
 "use strict";
 /* ============================================================================
-   PIT WALL — simulated live F1 telemetry demo.
-   This is NOT real data. It fakes a plausible race so you can feel the UX:
-   a data stream fills a rolling BUFFER; the view renders from a PLAYBACK HEAD
-   that sits `delay` seconds behind the live edge. Start/pause + delay nudge +
-   scrub = exactly how you'd sync the dashboard to a delayed TV broadcast.
+   PIT WALL — live F1 telemetry dashboard.
+
+   TWO MODES, same render functions:
+   • LIVE (default) — consume normalized events from the Pit Wall service over
+     WebSocket (live-client.js). The delay buffer lives on the SERVER; the
+     transport bar sends commands and renders the server's authoritative state.
+   • SIM (?sim=1)   — the original in-browser simulator, kept for offline UI
+     work with no backend. A data stream fills a rolling BUFFER; the view
+     renders from a PLAYBACK HEAD `delay` seconds behind the live edge.
    ========================================================================== */
+
+// Live mode unless the page is opened with ?sim=1.
+const SIM = new URLSearchParams(location.search).has("sim");
 
 // ---- Grid (representative 2026-style field; labelled simulated) ------------
 const TEAMS = {
@@ -302,9 +309,15 @@ const DRIVERS = [
   ["OCO",31,"HAS",.94],["BEA",87,"HAS",.93],
 ];
 const COMPOUNDS = {
-  S:{c:"#e5352b", n:"SOFT"}, M:{c:"#f5c542", n:"MED"}, H:{c:"#f2f2f2", n:"HARD"}, I:{c:"#3ba6ff", n:"INT"},
+  S:{c:"#e5352b", n:"SOFT"}, M:{c:"#f5c542", n:"MED"}, H:{c:"#f2f2f2", n:"HARD"},
+  I:{c:"#3ba6ff", n:"INT"}, W:{c:"#4491d2", n:"WET"}, "?":{c:"#8a939e", n:"—"},
 };
-const TOTAL_LAPS = 57;
+let TOTAL_LAPS = 57; // live mode overwrites this from the session event
+
+// Team colour/name for a snapshot car: live cars carry their own colour and full
+// team name (from DriverList — the source of truth); sim cars carry a TEAMS key.
+function teamColourOf(c){ return c.colour || (TEAMS[c.team]||{}).c || "#888"; }
+function teamNameOf(c){ return (TEAMS[c.team]||{}).n || c.team || "—"; }
 
 // ---- Track geometry: a stylised parametric circuit ------------------------
 // Build a closed loop, then resample by arc-length so cars move at even pace.
@@ -397,7 +410,7 @@ let delay = 0;            // seconds behind live edge that the view renders
 let paused = false;       // playback head frozen (buffer keeps filling)
 let headT = 0;            // the sim-time currently being displayed
 let scrubbing = false;
-let selected = 6;         // NOR by default
+let selectedCode = "NOR"; // pinned driver, selected by code (works in both modes)
 
 const RC_MSGS = [];       // race control feed (time-stamped)
 
@@ -554,7 +567,7 @@ function drawTrack(snap){
       tctx.beginPath(); tctx.arc(x,y,9,0,7); tctx.stroke(); }
   }
 }
-function cars_selCode(){ return DRIVERS[selected][0]; }
+function cars_selCode(){ return selectedCode; }
 
 // telemetry trace history for the selected driver (from buffer)
 function traceForSelected(seconds){
@@ -595,7 +608,7 @@ function renderTower(snap){
         <div class="drv"><span class="code"></span><span class="num"></span></div>
         <div class="tire"><span class="tdot"></span><span class="age"></span></div>
         <div class="gap tnum"></div><div class="lap tnum"></div><div class="badge"></div>`;
-      row.onclick=()=>{ selected=DRIVERS.findIndex(d=>d[0]===c.code); };
+      row.onclick=()=>{ selectedCode=row.dataset.code; };
       tower.appendChild(row);
     });
   }
@@ -605,19 +618,22 @@ function renderTower(snap){
     row.classList.toggle("sel", c.code===cars_selCode());
     const mv = c.pos<c.prev? '<span class="mv" style="color:var(--green)">▲</span>' : c.pos>c.prev? '<span class="mv" style="color:var(--red)">▼</span>':'';
     row.querySelector(".pos").innerHTML = c.pos+mv;
-    row.querySelector(".teambar").style.background=TEAMS[c.team].c;
+    row.querySelector(".teambar").style.background=teamColourOf(c);
     row.querySelector(".code").textContent=c.code;
     row.querySelector(".num").textContent=c.num;
-    const comp=COMPOUNDS[c.tire]||COMPOUNDS.M;
-    const td=row.querySelector(".tdot"); td.style.borderColor=comp.c; td.style.color=comp.c; td.textContent=c.tire;
-    row.querySelector(".age").textContent=Math.floor(c.tireAge)+"L";
-    // gap to leader by progress difference -> approximate seconds
+    const comp=COMPOUNDS[c.tire]||COMPOUNDS["?"];
+    const td=row.querySelector(".tdot"); td.style.borderColor=comp.c; td.style.color=comp.c; td.textContent=c.tire||"?";
+    row.querySelector(".age").textContent=Math.floor(c.tireAge||0)+"L";
+    // gap: live cars carry the feed's own gap string; sim approximates from progress
     const gapEl=row.querySelector(".gap");
     if(i===0){ gapEl.className="gap leader"; gapEl.textContent="LEADER"; }
+    else if(c.gapText!==undefined){ gapEl.className="gap tnum"; gapEl.textContent=c.gapText||"—"; }
     else { gapEl.className="gap tnum"; const dp=(leader.prog-c.prog); const secs=dp*90; gapEl.textContent=dp>1?"+"+Math.floor(dp)+"L":fmtGap(secs); }
     const lapEl=row.querySelector(".lap");
-    const isBest=snap.fastest.code===c.code;
-    lapEl.className="lap tnum "+(isBest?"best":c.bestLap&&c.lastLap<=c.bestLap+0.001?"pb":"norm");
+    // Live timing carries explicit purple/green flags; the sim infers them.
+    const isBest = c.lastLapOB!==undefined ? c.lastLapOB : snap.fastest.code===c.code;
+    const isPB = c.lastLapPB!==undefined ? c.lastLapPB : (c.bestLap&&c.lastLap<=c.bestLap+0.001);
+    lapEl.className="lap tnum "+(isBest?"best":isPB?"pb":"norm");
     lapEl.textContent = c.lastLap?fmtLap(c.lastLap):"—";
     const badge=row.querySelector(".badge");
     badge.innerHTML = c.pitting?'<span class="pit">PIT</span>': c.drs?'<span class="drs-on">DRS</span>':'';
@@ -627,7 +643,7 @@ function renderTower(snap){
 function renderDriverPanel(snap){
   const code=cars_selCode();
   const c=snap.cars.find(x=>x.code===code); if(!c)return;
-  const team=TEAMS[c.team];
+  const team={ n:teamNameOf(c), c:teamColourOf(c) };
   $("teleDrv").textContent=c.code;
   $("gSpeed").textContent=Math.round(c.spd);
   $("bSpeed").style.width=Math.min(100,c.spd/340*100)+"%";
@@ -642,13 +658,13 @@ function renderDriverPanel(snap){
   $("dCode").textContent=c.code;
   $("dTeamName").textContent=team.n;
   $("dPos").textContent=c.pos;
-  const comp=COMPOUNDS[c.tire]||COMPOUNDS.M;
+  const comp=COMPOUNDS[c.tire]||COMPOUNDS["?"];
   $("dTire").textContent=comp.n; $("dTire").style.color=comp.c;
-  $("dTireAge").textContent="· "+Math.floor(c.tireAge)+" laps";
+  $("dTireAge").textContent="· "+Math.floor(c.tireAge||0)+" laps";
   $("dLast").textContent=c.lastLap?fmtLap(c.lastLap):"—";
 
-  // charts
-  const tr=traceForSelected(7);
+  // charts (sim reads its snapshot buffer; live keeps per-driver rolling traces)
+  const tr = SIM ? traceForSelected(7) : liveTraceForSelected();
   const spd=tr.map(x=>x.spd), thr=tr.map(x=>x.thr), brk=tr.map(x=>x.brk), gear=tr.map(x=>x.gear);
   drawChart(chSpeed, [{data:spd,color:"#e8edf2",fill:true,max:340}]);
   drawChart(chPed, [{data:thr,color:"#38d66a",fill:false,max:100},{data:brk,color:"#ff3b30",fill:false,max:100}]);
@@ -662,48 +678,85 @@ function renderRC(snap){
   const rc=$("rc"); rc.innerHTML="";
   snap.rc.forEach(m=>{
     const el=document.createElement("div"); el.className="msg "+m.kind;
-    el.innerHTML=`<div class="ic"></div><div class="t tnum">${fmtClock(m.t)}</div><div class="tx">${m.text}</div>`;
+    const t = m.timeText!==undefined ? m.timeText : fmtClock(m.t); // live carries its own label (lap or UTC)
+    const tx=document.createElement("div"); tx.className="tx"; tx.textContent=m.text; // textContent: feed text is untrusted
+    el.innerHTML=`<div class="ic"></div><div class="t tnum">${t}</div>`;
+    el.appendChild(tx);
     rc.appendChild(el);
   });
 }
 
 function renderTopbar(snap){
-  $("lapCount").textContent=Math.min(snap.lap,TOTAL_LAPS)+" / "+TOTAL_LAPS;
-  $("sessClock").textContent=fmtClock(snap.t);
-  $("fastLap").textContent=snap.fastest.code?snap.fastest.code+" "+fmtLap(snap.fastest.time):"—";
-  $("leaderCode").textContent=snap.cars[0].code;
+  $("lapCount").textContent=Math.min(snap.lap||1,TOTAL_LAPS)+" / "+TOTAL_LAPS;
+  $("sessClock").textContent=fmtClock(snap.t||0);
+  $("fastLap").textContent=snap.fastest.code&&isFinite(snap.fastest.time)?snap.fastest.code+" "+fmtLap(snap.fastest.time):"—";
+  if(snap.cars.length) $("leaderCode").textContent=snap.cars[0].code;
   $("followCode").textContent=cars_selCode();
+  // Live extras the sim never sets: track flag + weather chip + race title.
+  if(snap.flag!==undefined){
+    const f=$("flagState"); f.textContent=snap.flag||"—";
+    f.style.color = snap.flag==="GREEN"?"var(--green)": snap.flag==="YELLOW"||snap.flag==="SC"||snap.flag==="VSC"?"var(--yellow)": snap.flag==="RED"?"var(--redk)":"var(--ink)";
+  }
+  if(snap.weather) $("temps").textContent=Math.round(snap.weather.airTemp??0)+"° / "+Math.round(snap.weather.trackTemp??0)+"°";
+  if(snap.title) $("raceName").textContent=snap.title;
+  if(snap.subtitle) $("raceSub").textContent=snap.subtitle;
 }
 
 function renderControls(){
-  const bufSecs = buffer.length? (buffer[buffer.length-1].t - buffer[0].t):0;
-  const behind = buffer.length? (buffer[buffer.length-1].t - headT):0;
+  // One code path for both modes: gather (running, paused, behind, buffer) from
+  // the sim's local state or from the SERVER's authoritative transport state.
+  let running, isPaused, behind, bufSecs, maxS, headPct;
+  if(SIM){
+    running=sim.running; isPaused=paused; maxS=BUF_MAX_S;
+    bufSecs = buffer.length? (buffer[buffer.length-1].t - buffer[0].t):0;
+    behind = buffer.length? (buffer[buffer.length-1].t - headT):0;
+    headPct = bufSecs>0? ((headT-buffer[0].t)/(buffer[buffer.length-1].t-buffer[0].t||1))*100 :0;
+  } else {
+    const t=LIVE.transport;
+    running=Boolean(t&&t.started); isPaused=Boolean(t&&t.paused);
+    behind=t?t.behindLiveSeconds:0; bufSecs=t?t.bufferDepthSeconds:0; maxS=t?t.maxSeconds:300;
+    headPct=(t&&t.liveEdge&&t.oldestTime&&t.headTime&&t.liveEdge>t.oldestTime)
+      ? Math.max(0,Math.min(100,(t.headTime-t.oldestTime)/(t.liveEdge-t.oldestTime)*100)) : 0;
+  }
   // delay readout
   const dv=$("delayVal");
-  if(behind<0.4 && !paused){ dv.textContent="LIVE"; dv.className="v live"; }
+  if(!running){ dv.textContent="—"; dv.className="v sync"; }
+  else if(behind<0.8 && !isPaused){ dv.textContent="LIVE"; dv.className="v live"; }
   else { dv.textContent="−"+behind.toFixed(1)+"s"; dv.className="v sync"; }
   // buffer meter
   $("bufLab").textContent=Math.round(bufSecs)+"s buffered";
-  const fillPct = bufSecs>0? Math.min(100, bufSecs/BUF_MAX_S*100):0;
-  $("buffill").style.width=fillPct+"%";
-  const headPct = bufSecs>0? ( (headT-buffer[0].t)/(buffer[buffer.length-1].t-buffer[0].t||1) )*100 :0;
+  $("buffill").style.width=(bufSecs>0? Math.min(100, bufSecs/maxS*100):0)+"%";
   $("bufhead").style.left=headPct+"%";
   // live status pill
   const st=$("liveStatus"), lab=$("liveLabel");
-  if(!sim.running){ st.className="status delayed"; lab.textContent="STANDBY"; }
-  else if(behind<0.6 && !paused){ st.className="status"; lab.textContent="LIVE"; }
-  else if(paused){ st.className="status delayed"; lab.textContent="PAUSED"; }
+  if(!running){ st.className="status delayed"; lab.textContent="STANDBY"; }
+  else if(behind<1 && !isPaused){ st.className="status"; lab.textContent="LIVE"; }
+  else if(isPaused){ st.className="status delayed"; lab.textContent="PAUSED"; }
   else { st.className="status delayed"; lab.textContent="DELAYED −"+Math.round(behind)+"s"; }
+  // play button reflects the authoritative state (matters in live mode, where the
+  // server may change state underneath us — e.g. another tab pressed pause)
+  const btn=$("btnPlay"), plab=$("playLabel");
+  const glyph=btn.querySelector(".ki");
+  if(!running){ btn.classList.remove("paused"); glyph.textContent="▶"; plab.textContent="Start"; }
+  else if(isPaused){ btn.classList.add("paused"); glyph.textContent="▶"; plab.textContent="Resume"; }
+  else { btn.classList.remove("paused"); glyph.textContent="⏸"; plab.textContent="Pause"; }
 }
 
 // ============================ MAIN LOOP ====================================
 let last=performance.now();
 function loop(now){
   const dt=Math.min(0.1,(now-last)/1000); last=now;
-  stepSim(dt);
-  if(sim.running) sampleToBuffer();
-  const snap=currentSnap();
-  drawTrack(snap);
+  let snap;
+  if(SIM){
+    stepSim(dt);
+    if(sim.running) sampleToBuffer();
+    snap=currentSnap();
+    drawTrack(snap);
+  } else {
+    snap=liveSnap();
+    drawTrackLive(snap);
+    renderBandLive(Boolean(snap));
+  }
   if(snap){ renderTower(snap); renderDriverPanel(snap); renderRC(snap); renderTopbar(snap); }
   renderControls();
   requestAnimationFrame(loop);
@@ -711,31 +764,50 @@ function loop(now){
 requestAnimationFrame(loop);
 
 // ============================ CONTROLS =====================================
+// Button labels/glyphs are rendered every frame by renderControls() from the
+// authoritative state, so the handlers only need to fire the action itself.
 function togglePlay(){
-  if(!sim.running){ sim.running=true; paused=false; }
-  else { paused=!paused; }
-  const btn=$("btnPlay"), lab=$("playLabel");
-  if(!sim.running){ /* n/a */ }
-  if(sim.running && !paused){ btn.classList.remove("paused"); btn.querySelector(".ki").textContent="⏸"; lab.textContent="Pause"; }
-  else if(sim.running && paused){ btn.classList.add("paused"); btn.querySelector(".ki").textContent="▶"; lab.textContent="Resume"; }
+  if(SIM){
+    if(!sim.running){ sim.running=true; paused=false; }
+    else { paused=!paused; }
+  } else {
+    const t=LIVE.transport;
+    if(!t || !t.started) LIVE.cmd.start();
+    else if(t.paused) LIVE.cmd.resume();
+    else LIVE.cmd.pause();
+  }
 }
 $("btnPlay").onclick=togglePlay;
-$("btnLive").onclick=()=>{ paused=false; delay=0; headT=sim.t; };
-$("nUp").onclick=()=>{ delay=Math.min(BUF_MAX_S-5, delay+5); if(paused){paused=false;} };
-$("nDn").onclick=()=>{ delay=Math.max(0, delay-5); };
+$("btnLive").onclick=()=>{
+  if(SIM){ paused=false; delay=0; headT=sim.t; }
+  else LIVE.cmd.jumpLive();
+};
+$("nUp").onclick=()=>{
+  if(SIM){ delay=Math.min(BUF_MAX_S-5, delay+5); if(paused){paused=false;} }
+  else LIVE.cmd.nudgeOffset(5);
+};
+$("nDn").onclick=()=>{
+  if(SIM){ delay=Math.max(0, delay-5); }
+  else LIVE.cmd.nudgeOffset(-5);
+};
 [["btnPlay",togglePlay],["btnLive",()=>$("btnLive").onclick()],["nUp",()=>$("nUp").onclick()],["nDn",()=>$("nDn").onclick()]]
   .forEach(([id,fn])=>$(id).addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();fn();}}));
 
 // scrub the buffer
 const bw=$("bufwrap");
 function scrubTo(clientX){
-  if(buffer.length<2) return;
   const r=bw.querySelector(".buftrack").getBoundingClientRect();
   const f=Math.max(0,Math.min(1,(clientX-r.left)/r.width));
-  const oldest=buffer[0].t, live=buffer[buffer.length-1].t;
-  headT=oldest+f*(live-oldest);
-  delay=Math.max(0, live-headT); paused=true;
-  const btn=$("btnPlay"); btn.classList.add("paused"); btn.querySelector(".ki").textContent="▶"; $("playLabel").textContent="Resume";
+  if(SIM){
+    if(buffer.length<2) return;
+    const oldest=buffer[0].t, live=buffer[buffer.length-1].t;
+    headT=oldest+f*(live-oldest);
+    delay=Math.max(0, live-headT); paused=true;
+  } else {
+    const t=LIVE.transport;
+    if(!t || !t.oldestTime || !t.liveEdge || t.liveEdge<=t.oldestTime) return;
+    LIVE.cmd.scrubTo(t.oldestTime + f*(t.liveEdge-t.oldestTime));
+  }
 }
 bw.addEventListener("pointerdown",e=>{ scrubbing=true; bw.setPointerCapture(e.pointerId); scrubTo(e.clientX); });
 bw.addEventListener("pointermove",e=>{ if(scrubbing) scrubTo(e.clientX); });
@@ -749,9 +821,214 @@ document.addEventListener("keydown",e=>{
   if(e.key==="ArrowRight"){ $("nDn").onclick(); }
 });
 
-// seed a couple of race-control lines + a name
-$("raceName").textContent="Round 12 — Grand Prix";
-$("raceSub").textContent="5.278 km · Dry · 24°C track · Simulated";
-pushRC("info","info","Formation lap complete — grid forming");
-pushRC("flag","flag","Race start — GREEN GREEN GREEN");
+// ============================ LIVE MODE ENGINE ==============================
+// Folds normalized events from the Pit Wall service into per-driver state and
+// builds, every frame, a snapshot in the exact shape the render functions above
+// already consume — so live and sim share all rendering code.
+
+const LIVE = {
+  cmd: null,               // transport commands (set once the WS module loads)
+  transport: null,         // server's authoritative transport state
+  connected: false,
+  byNum: new Map(),        // driver number -> accumulated car state
+  order: [],               // driver numbers in roster order (position fallback)
+  traces: new Map(),       // driver number -> rolling [{spd,thr,brk,gear}]
+  trails: new Map(),       // driver number -> [[x,y]] — draws the circuit outline
+  bounds: null,            // {minX,maxX,minY,maxY} of all seen positions
+  rc: [],                  // race-control feed, newest first
+  session: { gp:null, circuit:null, session:null, lap:null, totalLaps:null, flag:null, clock:null },
+  weather: null,
+  fastest: { code:null, time:Infinity },
+};
+
+function liveCar(num){
+  let c=LIVE.byNum.get(num);
+  if(!c){ c={ num, code:"#"+num, team:"—", colour:null,
+    spd:0, thr:0, brk:0, gear:0, rpm:0, drs:false,
+    x:null, y:null, onTrack:true, pos:null, prev:null, moveUntil:0,
+    gapText:"", lastLap:0, bestLap:0, lastLapPB:false, lastLapOB:false,
+    pitting:false, tire:"?", tireAge:0 };
+    LIVE.byNum.set(num,c); }
+  return c;
+}
+
+const RC_KIND={ Flag:"flag", SafetyCar:"flag", Drs:"drs", CarEvent:"car" };
+
+function onLiveEvent(e){
+  const p=e.payload;
+  switch(e.type){
+    case "driverList":{
+      LIVE.order=p.map(d=>d.num);
+      for(const d of p){ const c=liveCar(d.num); c.code=d.code; c.team=d.team; c.colour=d.colour; }
+      // keep the pinned driver valid for this session's roster
+      if(!p.some(d=>d.code===selectedCode) && p.length) selectedCode=p[0].code;
+      break; }
+    case "carData":{
+      const c=liveCar(p.num);
+      c.spd=p.speed; c.thr=p.throttle; c.brk=p.brake; c.gear=p.gear; c.rpm=p.rpm; c.drs=p.drs;
+      let tr=LIVE.traces.get(p.num); if(!tr){ tr=[]; LIVE.traces.set(p.num,tr); }
+      tr.push({spd:p.speed, thr:p.throttle, brk:p.brake, gear:p.gear});
+      if(tr.length>140) tr.shift();
+      break; }
+    case "position":{
+      const c=liveCar(p.num);
+      c.x=p.x; c.y=p.y; c.onTrack=p.onTrack;
+      const b=LIVE.bounds||(LIVE.bounds={minX:p.x,maxX:p.x,minY:p.y,maxY:p.y});
+      b.minX=Math.min(b.minX,p.x); b.maxX=Math.max(b.maxX,p.x);
+      b.minY=Math.min(b.minY,p.y); b.maxY=Math.max(b.maxY,p.y);
+      // trail: after ~a lap these polylines ARE the circuit map
+      let t=LIVE.trails.get(p.num); if(!t){ t=[]; LIVE.trails.set(p.num,t); }
+      const lastPt=t[t.length-1];
+      if(!lastPt || Math.hypot(p.x-lastPt[0], p.y-lastPt[1])>4){ t.push([p.x,p.y]); if(t.length>900) t.shift(); }
+      break; }
+    case "timing":{
+      const c=liveCar(p.num);
+      if(p.pos && p.pos!==c.pos){ c.prev=c.pos??p.pos; c.pos=p.pos; c.moveUntil=Date.now()+2500; }
+      if(p.gap!=null || p.interval!=null) c.gapText=String(p.gap??p.interval??"");
+      if(p.lastLap!=null){ c.lastLap=p.lastLap; c.lastLapPB=Boolean(p.lastLapPB); c.lastLapOB=Boolean(p.lastLapOB); }
+      if(p.bestLap!=null) c.bestLap=p.bestLap;
+      if(p.inPit!==undefined) c.pitting=Boolean(p.inPit||p.pitOut);
+      if(p.lastLapOB && p.lastLap) LIVE.fastest={code:c.code, time:p.lastLap};
+      // the server sim source folds tyre info into timing — accept it either way
+      if(p.compound) c.tire=p.compound;
+      if(p.age!=null) c.tireAge=p.age;
+      break; }
+    case "tyres":{
+      const c=liveCar(p.num); c.tire=p.compound; c.tireAge=p.age;
+      break; }
+    case "raceControl":{
+      const kind=RC_KIND[p.category]||"info";
+      const timeText=p.lap?("L"+p.lap):(p.utc?String(p.utc).slice(11,19):"");
+      LIVE.rc.unshift({kind, cls:kind, timeText, text:p.message});
+      if(LIVE.rc.length>60) LIVE.rc.pop();
+      break; }
+    case "session":{
+      LIVE.session=p;
+      if(p.totalLaps) TOTAL_LAPS=p.totalLaps;
+      break; }
+    case "weather": LIVE.weather=p; break;
+    case "seek":
+      // Scrubbed backwards: buffered events replay from the seek point, so drop
+      // the accumulators that would otherwise double up. (Trails/bounds stay —
+      // circuit geometry doesn't change with time.)
+      LIVE.rc=[]; LIVE.traces.clear();
+      break;
+  }
+}
+
+/** "1:23:45" / "23:45" / "45" → seconds. The feed's clocks are strings. */
+function parseClockStr(s){
+  if(typeof s!=="string"||!s) return 0;
+  return s.split(":").reduce((acc,part)=>acc*60+(Number(part)||0),0);
+}
+
+function liveSnap(){
+  if(LIVE.byNum.size===0) return null;
+  const orderIdx=new Map(LIVE.order.map((n,i)=>[n,i]));
+  const cars=[...LIVE.byNum.values()]
+    .sort((a,b)=>(a.pos??(orderIdx.get(a.num)??98)+1) - (b.pos??(orderIdx.get(b.num)??98)+1))
+    .map((c,i)=>{
+      if(c.moveUntil && Date.now()>c.moveUntil){ c.prev=c.pos; c.moveUntil=0; }
+      return { code:c.code, num:c.num, team:c.team, colour:c.colour,
+        pos:c.pos??i+1, prev:c.prev??c.pos??i+1,
+        spd:c.spd, thr:c.thr, brk:c.brk, gear:c.gear, rpm:c.rpm, drs:c.drs,
+        tire:c.tire, tireAge:c.tireAge, lastLap:c.lastLap, bestLap:c.bestLap,
+        lastLapPB:c.lastLapPB, lastLapOB:c.lastLapOB, pitting:c.pitting,
+        gapText:c.gapText, x:c.x, y:c.y, onTrack:c.onTrack };
+    });
+  const s=LIVE.session;
+  return {
+    cars, rc:LIVE.rc, fastest:LIVE.fastest,
+    lap:s.lap||1, t:parseClockStr(s.clock),
+    flag:s.flag??null, weather:LIVE.weather,
+    title: s.gp? (s.gp+(s.session?" — "+s.session:"")) : null,
+    subtitle: s.circuit? (s.circuit+(LIVE.weather?` · ${LIVE.weather.rain?"Wet":"Dry"} · ${Math.round(LIVE.weather.trackTemp??0)}°C track`:"")) : null,
+  };
+}
+
+function liveTraceForSelected(){
+  for(const c of LIVE.byNum.values()) if(c.code===selectedCode) return LIVE.traces.get(c.num)||[];
+  return [];
+}
+
+// Track map from real GPS: fit the seen bounds into the canvas (Y up in F1
+// coords, down on canvas), draw each driver's trail — which converges on the
+// circuit outline after a lap — then the cars on top.
+function drawTrackLive(snap){
+  const dpr=Math.min(2,window.devicePixelRatio||1);
+  const w=trackCv.clientWidth, h=trackCv.clientHeight;
+  if(trackCv.width!==w*dpr){ trackCv.width=w*dpr; trackCv.height=h*dpr; }
+  tctx.setTransform(dpr,0,0,dpr,0,0);
+  tctx.clearRect(0,0,w,h);
+  const b=LIVE.bounds;
+  if(!snap || !b || b.maxX-b.minX<10){ // nothing meaningful to draw yet
+    tctx.fillStyle="#3a444f"; tctx.font="11px "+getComputedStyle(document.body).fontFamily;
+    tctx.textAlign="center"; tctx.fillText("Track map appears once position data arrives", w/2, h/2);
+    tctx.textAlign="start";
+    return;
+  }
+  const pad=54;
+  const scale=Math.min((w-2*pad)/(b.maxX-b.minX), (h-2*pad)/(b.maxY-b.minY));
+  const ox=(w-(b.maxX-b.minX)*scale)/2, oy=(h-(b.maxY-b.minY)*scale)/2;
+  const px=(x)=>ox+(x-b.minX)*scale;
+  const py=(y)=>h-(oy+(y-b.minY)*scale);
+  tctx.lineJoin="round"; tctx.lineCap="round";
+  for(const pass of [["#1b2229",16],["#0c0f13",10]]){
+    tctx.strokeStyle=pass[0]; tctx.lineWidth=pass[1];
+    for(const trail of LIVE.trails.values()){
+      if(trail.length<2) continue;
+      tctx.beginPath();
+      trail.forEach((pt,i)=>{ i?tctx.lineTo(px(pt[0]),py(pt[1])):tctx.moveTo(px(pt[0]),py(pt[1])); });
+      tctx.stroke();
+    }
+  }
+  for(let k=snap.cars.length-1;k>=0;k--){
+    const c=snap.cars[k];
+    if(c.x===null||c.y===null) continue;
+    const x=px(c.x), y=py(c.y);
+    const isSel=(c.code===cars_selCode());
+    tctx.globalAlpha=c.onTrack?1:0.35;
+    tctx.beginPath(); tctx.arc(x,y, isSel?7:5, 0, 7);
+    tctx.fillStyle=teamColourOf(c); tctx.fill();
+    if(isSel){ tctx.strokeStyle="#fff"; tctx.lineWidth=2; tctx.stroke();
+      tctx.font="700 11px "+getComputedStyle(document.body).fontFamily;
+      tctx.fillStyle="#fff"; tctx.fillText(c.code, x+10, y+4); }
+    if(c.pos===1){ tctx.strokeStyle="rgba(255,255,255,.7)"; tctx.lineWidth=1.5;
+      tctx.beginPath(); tctx.arc(x,y,9,0,7); tctx.stroke(); }
+    tctx.globalAlpha=1;
+  }
+}
+
+// The banner doubles as the connection indicator in live mode.
+function renderBandLive(hasData){
+  const band=$("demoband");
+  if(!LIVE.connected){ band.style.display=""; band.textContent="Connecting to Pit Wall service…"; }
+  else if(!hasData){ band.style.display=""; band.textContent="Connected — waiting for session data…"; }
+  else band.style.display="none";
+}
+
+// ============================ MODE BOOTSTRAP ================================
+if(SIM){
+  // seed a couple of race-control lines + a name
+  $("raceName").textContent="Round 12 — Grand Prix";
+  $("raceSub").textContent="5.278 km · Dry · 24°C track · Simulated";
+  pushRC("info","info","Formation lap complete — grid forming");
+  pushRC("flag","flag","Race start — GREEN GREEN GREEN");
+} else {
+  $("raceName").textContent="Pit Wall";
+  $("raceSub").textContent="Waiting for session…";
+  $("demoband").textContent="Connecting to Pit Wall service…";
+  // No-op commands until the WS module is up, so early clicks can't throw.
+  LIVE.cmd={ start(){}, pause(){}, resume(){}, jumpLive(){}, setOffset(){}, nudgeOffset(){}, scrubTo(){} };
+  import("./live-client.js").then(({connectLive})=>{
+    const conn=connectLive({
+      onEvent: onLiveEvent,
+      onTransport: (t)=>{ LIVE.transport=t; },
+      onStatus: (s)=>{ LIVE.connected=(s==="connected"); },
+    });
+    LIVE.cmd=conn.cmd;
+  }).catch((err)=>{
+    $("demoband").textContent="Live client failed to load — try ?sim=1 · "+err;
+  });
+}
 </script>

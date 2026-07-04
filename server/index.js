@@ -50,11 +50,35 @@ function broadcast(obj) {
   }
 }
 
+// ---- Catch-up cache ---------------------------------------------------------
+// The buffer broadcasts each event exactly once, so a browser that connects (or
+// refreshes) mid-session would miss the roster and all current state until new
+// patches happen to arrive. Remember the LAST RELEASED event per type (and per
+// driver for per-driver types) and replay them to each new client. Spoiler-safe by
+// construction: only events already released at the playback head are cached.
+const lastReleased = new Map(); // "type:num" → event
+const RC_KEEP = 40;             // race-control messages kept for catch-up
+const rcReleased = [];
+function cacheReleased(event) {
+  if (event.type === 'transport' || event.type === 'seek') return;
+  if (event.type === 'raceControl') {
+    rcReleased.push(event);
+    if (rcReleased.length > RC_KEEP) rcReleased.shift();
+    return;
+  }
+  const num = event.payload && typeof event.payload === 'object' ? event.payload.num : undefined;
+  lastReleased.set(`${event.type}:${num ?? ''}`, event);
+}
+function sendCatchUp(socket) {
+  for (const event of lastReleased.values()) socket.send(JSON.stringify(event));
+  for (const event of rcReleased) socket.send(JSON.stringify(event));
+}
+
 // ---- The delay buffer: releases events to the browser, offset behind live ---
 const buffer = new DelayBuffer({
   maxSeconds: config.delayMaxSeconds,
   startOffsetSeconds: config.delayStartSeconds,
-  onRelease: (event) => broadcast(event),          // released event → all browsers
+  onRelease: (event) => { cacheReleased(event); broadcast(event); }, // released event → all browsers
   onState: (state) => broadcast(state),            // transport state → all browsers
 });
 // Tick the buffer ~20x/sec: advances the playback head and releases due events.
@@ -141,8 +165,10 @@ wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (socket) => {
   health.clients = wss.clients.size;
   log.info('Dashboard connected', { clients: wss.clients.size });
-  // Send the current transport state immediately so the UI reflects reality on load.
+  // Send the current transport state immediately so the UI reflects reality on
+  // load, then the catch-up cache so a mid-session (re)connect isn't blank.
   socket.send(JSON.stringify(buffer.state()));
+  sendCatchUp(socket);
   socket.on('message', (raw) => handleControl(buffer, raw.toString()));
   socket.on('close', () => { health.clients = wss.clients.size; });
   socket.on('error', (err) => log.warn('WS client error', { error: String(err) }));
