@@ -23,10 +23,18 @@ export function connectLive({ onEvent, onTransport, onStatus } = {}) {
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
   let ws;
   let backoff = 500;
+  // Commands issued while the socket is down (e.g. Safari suspends background
+  // tabs and kills the connection; the user clicks Start right after waking the
+  // tab, mid-reconnect). Queue a few and flush on open — never drop silently.
+  const pending = [];
+  const PENDING_MAX = 8;
 
   function open() {
     ws = new WebSocket(url);
-    ws.onopen = () => { backoff = 500; onStatus && onStatus('connected'); };
+    ws.onopen = () => {
+      backoff = 500; onStatus && onStatus('connected');
+      while (pending.length) ws.send(pending.shift());
+    };
     ws.onclose = () => {
       onStatus && onStatus('disconnected');
       // Reconnect with capped exponential backoff — the server may restart on deploy.
@@ -45,7 +53,14 @@ export function connectLive({ onEvent, onTransport, onStatus } = {}) {
   }
   open();
 
-  function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+  function send(obj) {
+    const data = JSON.stringify(obj);
+    if (ws && ws.readyState === 1) ws.send(data);
+    else {
+      pending.push(data);
+      if (pending.length > PENDING_MAX) pending.shift(); // keep the newest commands
+    }
+  }
 
   // These map 1:1 to the transport bar the demo already renders.
   const cmd = {
@@ -56,6 +71,8 @@ export function connectLive({ onEvent, onTransport, onStatus } = {}) {
     setOffset: (seconds) => send({ cmd: 'setOffset', seconds }),
     nudgeOffset: (deltaSeconds) => send({ cmd: 'nudgeOffset', deltaSeconds }),
     scrubTo: (ingestTime) => send({ cmd: 'scrubTo', ingestTime }),
+    // Switch the server's data source: {kind:'live'} or {kind:'replay', file}.
+    setSource: (kind, file) => send({ cmd: 'setSource', kind, file }),
   };
 
   return { cmd, close: () => ws && ws.close() };

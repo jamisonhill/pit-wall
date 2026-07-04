@@ -115,6 +115,20 @@ export class DelayBuffer {
   pause() { this.paused = true; this._emitState(); }
   resume() { if (this.started) this.paused = false; this._emitState(); }
 
+  /**
+   * Drop all buffered events and return to STANDBY (used when the data source is
+   * switched, e.g. live → a recorded session). The configured offset is kept —
+   * it's the user's TV-sync preference, not part of the stream.
+   */
+  reset() {
+    this.events = [];
+    this.headTime = null;
+    this.liveEdge = null;
+    this.paused = true;
+    this.started = false;
+    this._emitState();
+  }
+
   /** Snap to the live edge and clear the delay. */
   jumpLive() {
     this.offsetMs = 0;

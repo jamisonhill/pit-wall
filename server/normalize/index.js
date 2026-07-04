@@ -194,6 +194,37 @@ function mapTyres(num, line, ingestTime) {
 // TrackStatus codes → the flag the header shows.
 const TRACK_FLAG = { 1: 'GREEN', 2: 'YELLOW', 4: 'SC', 5: 'RED', 6: 'VSC', 7: 'VSC' };
 
+/** Build the roster payload from the merged DriverList state (or [] if none). */
+function rosterFromState() {
+  const merged = state.topics.DriverList ?? {};
+  return driverKeys(merged)
+    .map((num) => merged[num])
+    .filter((d) => d && d.Tla)
+    .sort((a, b) => (toNum(a.Line) ?? 99) - (toNum(b.Line) ?? 99))
+    .map((d) => ({
+      num: toNum(d.RacingNumber),
+      code: d.Tla,
+      name: d.FullName ?? d.BroadcastName ?? d.Tla,
+      team: d.TeamName ?? '—',
+      colour: d.TeamColour ? `#${d.TeamColour}` : '#888888',
+    }));
+}
+
+/** Build the weather payload from the merged WeatherData state (or null if none). */
+function weatherFromState() {
+  const w = state.topics.WeatherData;
+  if (!w) return null;
+  return {
+    airTemp: toNum(w.AirTemp),
+    trackTemp: toNum(w.TrackTemp),
+    wind: toNum(w.WindSpeed),
+    windDir: toNum(w.WindDirection),
+    humidity: toNum(w.Humidity),
+    pressure: toNum(w.Pressure),
+    rain: (toNum(w.Rainfall) ?? 0) > 0,
+  };
+}
+
 // ---- The entry point -----------------------------------------------------------
 
 /**
@@ -232,18 +263,7 @@ export function normalize(msg) {
 
     case 'DriverList': {
       state.topics[topic] = mergeDelta(state.topics[topic], data);
-      const merged = state.topics[topic] ?? {};
-      const roster = driverKeys(merged)
-        .map((num) => merged[num])
-        .filter((d) => d && d.Tla)
-        .sort((a, b) => (toNum(a.Line) ?? 99) - (toNum(b.Line) ?? 99))
-        .map((d) => ({
-          num: toNum(d.RacingNumber),
-          code: d.Tla,
-          name: d.FullName ?? d.BroadcastName ?? d.Tla,
-          team: d.TeamName ?? '—',
-          colour: d.TeamColour ? `#${d.TeamColour}` : '#888888',
-        }));
+      const roster = rosterFromState();
       if (!roster.length) return [];
       // Re-emit the whole roster on any change — it's tiny and keeps clients simple.
       return [{ type: 'driverList', ingestTime, sessionTime: null, payload: roster }];
@@ -302,19 +322,8 @@ export function normalize(msg) {
 
     case 'WeatherData': {
       state.topics[topic] = mergeDelta(state.topics[topic], data);
-      const w = state.topics[topic] ?? {};
-      return [{
-        type: 'weather', ingestTime, sessionTime: null,
-        payload: {
-          airTemp: toNum(w.AirTemp),
-          trackTemp: toNum(w.TrackTemp),
-          wind: toNum(w.WindSpeed),
-          windDir: toNum(w.WindDirection),
-          humidity: toNum(w.Humidity),
-          pressure: toNum(w.Pressure),
-          rain: (toNum(w.Rainfall) ?? 0) > 0,
-        },
-      }];
+      const payload = weatherFromState();
+      return payload ? [{ type: 'weather', ingestTime, sessionTime: null, payload }] : [];
     }
 
     // Heartbeat drives the adapter's watchdog; nothing to show. The rest of the
@@ -327,4 +336,42 @@ export function normalize(msg) {
 
 function sessionEvent(ingestTime) {
   return { type: 'session', ingestTime, sessionTime: null, payload: { ...state.session } };
+}
+
+/**
+ * Re-emit the CURRENT merged state as a batch of ordinary events — a "keyframe".
+ * The server ingests one every ~45s so the delay buffer always contains a complete
+ * snapshot younger than its prune horizon: pressing Start hours after boot (or
+ * scrubbing backwards) always finds a roster, session header, tower state and
+ * tyres, even though the feed only sent them once at subscribe time.
+ *
+ * raceControl is deliberately EXCLUDED: clients append those, so re-emitting
+ * would duplicate the feed. (New connections get recent RC from the server's
+ * release catch-up cache instead.)
+ *
+ * @param {number} ingestTime
+ * @returns {Array<{type:string,ingestTime:number,sessionTime:any,payload:any}>}
+ */
+export function keyframeEvents(ingestTime) {
+  const events = [];
+
+  const roster = rosterFromState();
+  if (roster.length) events.push({ type: 'driverList', ingestTime, sessionTime: null, payload: roster });
+
+  // Only meaningful once something session-related has arrived.
+  if (Object.values(state.session).some((v) => v !== null)) events.push(sessionEvent(ingestTime));
+
+  const weather = weatherFromState();
+  if (weather) events.push({ type: 'weather', ingestTime, sessionTime: null, payload: weather });
+
+  const timingLines = state.topics.TimingData?.Lines ?? {};
+  for (const num of driverKeys(timingLines)) {
+    if (timingLines[num]) events.push(mapTimingLine(num, timingLines[num], ingestTime));
+  }
+  const tyreLines = state.topics.TimingAppData?.Lines ?? {};
+  for (const num of driverKeys(tyreLines)) {
+    const ev = tyreLines[num] ? mapTyres(num, tyreLines[num], ingestTime) : null;
+    if (ev) events.push(ev);
+  }
+  return events;
 }

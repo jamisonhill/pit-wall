@@ -26,8 +26,9 @@ import { Recorder } from './recorder/index.js';
 import { SimSource } from './sources/simSource.js';
 import { ReplaySource } from './sources/replaySource.js';
 import { SignalRSource } from './signalr/client.js';
-import { normalize } from './normalize/index.js';
+import { normalize, keyframeEvents, resetNormalizer } from './normalize/index.js';
 import { isCompressed, inflateRaw } from './decode/index.js';
+import { nextSession } from './schedule.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = path.join(__dirname, '..', 'web');
@@ -75,11 +76,24 @@ function sendCatchUp(socket) {
 }
 
 // ---- The delay buffer: releases events to the browser, offset behind live ---
+// Transport states go out decorated with feed health + the active source, so the
+// dashboard can say WHICH session's data it is showing and whether it's fresh.
+function decorateTransport(state) {
+  return {
+    ...state,
+    feed: {
+      connected: health.feedConnected,
+      lastEventAgeSeconds: health.lastEventAt ? Math.round((Date.now() - health.lastEventAt) / 1000) : null,
+    },
+    source: activeSource,
+  };
+}
+
 const buffer = new DelayBuffer({
   maxSeconds: config.delayMaxSeconds,
   startOffsetSeconds: config.delayStartSeconds,
   onRelease: (event) => { cacheReleased(event); broadcast(event); }, // released event → all browsers
-  onState: (state) => broadcast(state),            // transport state → all browsers
+  onState: (state) => broadcast(decorateTransport(state)),           // transport state → all browsers
 });
 // Tick the buffer ~20x/sec: advances the playback head and releases due events.
 const tickTimer = setInterval(() => buffer.tick(), 50);
@@ -90,13 +104,38 @@ function ingest(event) {
   buffer.push(event);
 }
 
+// ---- Keyframes: keep a full state snapshot inside the prune horizon ---------
+// The feed sends DriverList/SessionInfo/etc once at subscribe time; the buffer
+// prunes anything older than ~5 min. Without this, pressing Start hours after
+// boot finds no roster and the dashboard renders blank. Re-ingesting the merged
+// state every 45s guarantees a complete snapshot is always in the buffer.
+const keyframeTimer = setInterval(() => {
+  try {
+    for (const ev of keyframeEvents(Date.now())) ingest(ev);
+  } catch (err) {
+    log.error('Keyframe emission failed', { error: String(err) });
+  }
+}, 45_000);
+
 // ---- Recorder (raw stream → disk, for the replay corpus) -------------------
 const recorder = new Recorder({ dir: config.recordDir, enabled: config.recordRaw });
 
-// ---- Select and start the data source --------------------------------------
-let source;
-function startSource() {
-  if (config.source === 'signalr') {
+// ---- Data sources: start, stop, and switch at runtime -----------------------
+// The "live" source is whatever SOURCE was configured at boot (signalr in prod,
+// sim in dev); the session picker can switch between it and recorded sessions.
+const bootKind = config.source;
+let source = null;
+let activeSource = { kind: null, label: null, file: null };
+
+function startSource(kind, file) {
+  activeSource = {
+    kind,
+    label: kind === 'replay' ? path.basename(file)
+      : kind === 'signalr' ? 'F1 live feed' : 'built-in simulator',
+    file: kind === 'replay' ? path.basename(file) : null,
+  };
+  health.source = kind;
+  if (kind === 'signalr') {
     // Real feed. The adapter emits raw topic messages; we decode → normalize → ingest.
     source = new SignalRSource({
       config: config.signalr,
@@ -115,17 +154,92 @@ function startSource() {
       },
     });
     source.start();
-  } else if (config.source === 'replay') {
-    source = new ReplaySource({ file: config.replayFile, speed: config.replaySpeed, emit: ingest });
+  } else if (kind === 'replay') {
+    source = new ReplaySource({ file, speed: config.replaySpeed, emit: ingest });
     health.feedConnected = true;
     source.start();
   } else {
-    // Default: the built-in sim, so the skeleton runs with no feed.
+    // The built-in sim, so the skeleton runs with no feed.
     source = new SimSource((ev) => ingest(ev));
     health.feedConnected = true;
     source.start();
     log.info('Running with the built-in SIM source (SOURCE=sim). Set SOURCE=signalr for the live feed.');
   }
+}
+
+function stopSource() {
+  try { source && source.stop && source.stop(); } catch { /* already stopped */ }
+  source = null;
+  health.feedConnected = false;
+}
+
+/**
+ * Session-picker switch (control command `setSource`). Tears down the current
+ * source and stream state, tells every client to rebuild, and starts the new
+ * source in STANDBY. `kind` is 'live' or 'replay' (+ a recording basename).
+ */
+function switchSource(kind, file) {
+  let resolved = null;
+  if (kind === 'replay') {
+    // basename() forbids path traversal — recordings live flat in recordDir.
+    if (typeof file !== 'string' || !file.endsWith('.ndjson')) {
+      log.warn('setSource rejected: bad replay file', { file });
+      return;
+    }
+    resolved = path.join(config.recordDir, path.basename(file));
+    if (!fs.existsSync(resolved)) {
+      log.warn('setSource rejected: recording not found', { file });
+      return;
+    }
+  }
+  log.info('Switching data source', { kind, file: resolved ?? undefined });
+  stopSource();
+  resetNormalizer();
+  lastReleased.clear();
+  rcReleased.length = 0;
+  buffer.reset();
+  // Clients must drop accumulated per-driver state and rebuild from the new stream.
+  broadcast({ type: 'reset', ingestTime: Date.now(), payload: { kind } });
+  startSource(kind === 'replay' ? 'replay' : bootKind, resolved);
+  broadcast(decorateTransport(buffer.state()));
+}
+
+// ---- Recording listing (for the session picker) -----------------------------
+/** Read the head of a recording to label it, e.g. "British Grand Prix — Qualifying". */
+async function recordingLabel(filePath) {
+  try {
+    const fh = await fs.promises.open(filePath, 'r');
+    const { buffer: head } = await fh.read(Buffer.alloc(131072), 0, 131072, 0);
+    await fh.close();
+    for (const line of head.toString('utf8').split('\n')) {
+      if (!line.includes('"SessionInfo"')) continue;
+      const rec = JSON.parse(line);
+      const info = JSON.parse(rec.raw);
+      const gp = info?.Meeting?.Name, session = info?.Name;
+      if (gp) return session ? `${gp} — ${session}` : gp;
+    }
+  } catch { /* unlabelled is fine */ }
+  return null;
+}
+
+async function listRecordings() {
+  let names;
+  try { names = await fs.promises.readdir(config.recordDir); } catch { return []; }
+  const out = [];
+  for (const name of names.filter((n) => n.endsWith('.ndjson'))) {
+    const full = path.join(config.recordDir, name);
+    try {
+      const stat = await fs.promises.stat(full);
+      if (stat.size === 0) continue;
+      out.push({
+        file: name,
+        sizeBytes: stat.size,
+        startedAt: stat.birthtime?.toISOString?.() ?? stat.mtime.toISOString(),
+        label: (await recordingLabel(full)) ?? name,
+      });
+    } catch { /* skip unreadable files */ }
+  }
+  return out.sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
 }
 
 // ---- HTTP server: static dashboard + /healthz ------------------------------
@@ -141,9 +255,25 @@ const server = http.createServer((req, res) => {
       ok: true,
       ...health,
       clients: wss ? wss.clients.size : 0,
-      transport: buffer.state(),
+      transport: decorateTransport(buffer.state()),
       lastEventAgeMs: health.lastEventAt ? Date.now() - health.lastEventAt : null,
     }));
+    return;
+  }
+
+  // Recorded sessions available to the picker.
+  if (url.pathname === '/api/recordings') {
+    listRecordings()
+      .then((list) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(list)); })
+      .catch(() => { res.writeHead(500); res.end('[]'); });
+    return;
+  }
+
+  // The next scheduled session ("when is the data live again?").
+  if (url.pathname === '/api/next-session') {
+    nextSession()
+      .then((s) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(s ?? {})); })
+      .catch(() => { res.writeHead(500); res.end('{}'); });
     return;
   }
 
@@ -172,9 +302,9 @@ wss.on('connection', (socket) => {
   log.info('Dashboard connected', { clients: wss.clients.size });
   // Send the current transport state immediately so the UI reflects reality on
   // load, then the catch-up cache so a mid-session (re)connect isn't blank.
-  socket.send(JSON.stringify(buffer.state()));
+  socket.send(JSON.stringify(decorateTransport(buffer.state())));
   sendCatchUp(socket);
-  socket.on('message', (raw) => handleControl(buffer, raw.toString()));
+  socket.on('message', (raw) => handleControl(buffer, raw.toString(), switchSource));
   socket.on('close', () => { health.clients = wss.clients.size; });
   socket.on('error', (err) => log.warn('WS client error', { error: String(err) }));
 });
@@ -183,13 +313,14 @@ wss.on('connection', (socket) => {
 server.listen(config.port, () => {
   log.info(`Pit Wall listening on http://0.0.0.0:${config.port}`, { source: config.source });
   log.info(`Dashboard: http://localhost:${config.port}  ·  Health: http://localhost:${config.port}/healthz`);
-  startSource();
+  startSource(bootKind, config.replayFile);
 });
 
 // ---- Graceful shutdown ------------------------------------------------------
 function shutdown() {
   log.info('Shutting down…');
   clearInterval(tickTimer);
+  clearInterval(keyframeTimer);
   try { source && source.stop && source.stop(); } catch {}
   recorder.close();
   for (const c of wss.clients) c.terminate();

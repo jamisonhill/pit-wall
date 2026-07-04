@@ -3,7 +3,7 @@
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, resetNormalizer } from '../server/normalize/index.js';
+import { normalize, resetNormalizer, keyframeEvents } from '../server/normalize/index.js';
 
 const T = 1_000_000; // a fixed ingestTime for all fixtures
 
@@ -166,6 +166,36 @@ test('session: SessionInfo, TrackStatus and LapCount accumulate into one view', 
     gp: 'British Grand Prix', circuit: 'Silverstone', session: 'Race', status: null,
     lap: 31, totalLaps: 52, flag: 'SC', clock: null,
   });
+});
+
+// ---- Keyframes -----------------------------------------------------------------
+
+test('keyframeEvents re-emits full merged state, excluding raceControl', () => {
+  feed('DriverList', DRIVER_SNAPSHOT);
+  feed('TimingData', TIMING_SNAPSHOT);
+  feed('TimingAppData', { Lines: { 1: { Stints: [{ Compound: 'SOFT', New: 'true', TotalLaps: 4 }] } } });
+  feed('WeatherData', { AirTemp: '20', TrackTemp: '30', Rainfall: '0' });
+  feed('SessionInfo', { Meeting: { Name: 'Test GP' }, Name: 'Race' });
+  feed('RaceControlMessages', { Messages: [{ Utc: 'x', Category: 'Flag', Message: 'GREEN' }] });
+
+  const T2 = T + 60_000;
+  const kf = keyframeEvents(T2);
+  const types = kf.map((e) => e.type);
+  assert.ok(types.includes('driverList'));
+  assert.ok(types.includes('session'));
+  assert.ok(types.includes('weather'));
+  assert.equal(types.filter((t) => t === 'timing').length, 2);   // both drivers
+  assert.equal(types.filter((t) => t === 'tyres').length, 1);
+  assert.ok(!types.includes('raceControl'));                     // append-only — never re-emitted
+  assert.ok(kf.every((e) => e.ingestTime === T2));               // stamped fresh
+  // Keyframe content matches merged state (spot check).
+  const roster = kf.find((e) => e.type === 'driverList').payload;
+  assert.deepEqual(roster.map((d) => d.code), ['NOR', 'VER']);
+  assert.equal(kf.find((e) => e.type === 'session').payload.gp, 'Test GP');
+});
+
+test('keyframeEvents is empty before any state has arrived', () => {
+  assert.deepEqual(keyframeEvents(T), []);
 });
 
 test('unknown topics are dropped, malformed payloads never throw', () => {

@@ -173,6 +173,12 @@
     box-shadow:0 0 8px var(--yellow); border-radius:2px; }
   .bufwrap.slider { cursor:ew-resize; }
   .hintline { font-size:10.5px; color:var(--ink3); letter-spacing:.02em; max-width:230px; }
+  .pick {
+    background:#0f1319; color:var(--ink2); border:1px solid var(--line2); border-radius:8px;
+    font:inherit; font-size:11px; padding:6px 8px; max-width:230px; cursor:pointer;
+  }
+  .pick:hover { border-color:#3c4835; color:var(--ink); }
+  .pick:focus-visible { outline:2px solid var(--cyan); outline-offset:2px; }
   .demoband {
     position:fixed; top:0; left:50%; transform:translateX(-50%);
     background:rgba(225,6,0,.12); border:1px solid rgba(225,6,0,.4); border-top:none;
@@ -196,6 +202,8 @@
       <div class="chip flag"><span class="k">Track</span><span class="v" id="flagState">GREEN</span></div>
       <div class="chip"><span class="k">Air / Track</span><span class="v tnum" id="temps">23° / 41°</span></div>
       <div class="chip"><span class="k">Session</span><span class="v tnum" id="sessClock">0:00:00</span></div>
+      <div class="chip"><span class="k">Data</span><span class="v" id="dataState">—</span></div>
+      <select id="sessionPick" class="pick" title="Choose which session to watch: the live feed or a recorded session"></select>
       <div class="status delayed" id="liveStatus"><span class="dot"></span><span id="liveLabel">STANDBY</span></div>
     </div>
   </header>
@@ -727,12 +735,18 @@ function renderControls(){
   $("bufLab").textContent=Math.round(bufSecs)+"s buffered";
   $("buffill").style.width=(bufSecs>0? Math.min(100, bufSecs/maxS*100):0)+"%";
   $("bufhead").style.left=headPct+"%";
-  // live status pill
+  // live status pill (OFFLINE wins: commands queue while disconnected, but the
+  // user must be able to SEE that the server link is down)
   const st=$("liveStatus"), lab=$("liveLabel");
-  if(!running){ st.className="status delayed"; lab.textContent="STANDBY"; }
+  if(!SIM && !LIVE.connected){ st.className="status delayed"; lab.textContent="OFFLINE"; }
+  else if(!running){ st.className="status delayed"; lab.textContent="STANDBY"; }
   else if(behind<1 && !isPaused){ st.className="status"; lab.textContent="LIVE"; }
   else if(isPaused){ st.className="status delayed"; lab.textContent="PAUSED"; }
   else { st.className="status delayed"; lab.textContent="DELAYED −"+Math.round(behind)+"s"; }
+  // "Data" chip: what session/state the numbers on screen belong to
+  const ds=$("dataState");
+  if(SIM){ ds.textContent="SIM"; ds.style.color="var(--cyan)"; }
+  else { const info=liveDataState(); ds.textContent=info.text; ds.style.color=info.color; }
   // play button reflects the authoritative state (matters in live mode, where the
   // server may change state underneath us — e.g. another tab pressed pause)
   const btn=$("btnPlay"), plab=$("playLabel");
@@ -913,13 +927,63 @@ function onLiveEvent(e){
       // circuit geometry doesn't change with time.)
       LIVE.rc=[]; LIVE.traces.clear();
       break;
+    case "reset":
+      // The server switched data source (live ↔ a recorded session): drop ALL
+      // accumulated state — the new stream rebuilds it from its own snapshot.
+      LIVE.byNum.clear(); LIVE.order=[];
+      LIVE.traces.clear(); LIVE.trails.clear(); LIVE.bounds=null;
+      LIVE.rc=[]; LIVE.weather=null;
+      LIVE.fastest={code:null, time:Infinity};
+      LIVE.session={ gp:null, circuit:null, session:null, status:null, lap:null, totalLaps:null, flag:null, clock:null };
+      break;
   }
+}
+
+// What is this data? Shown in the header "Data" chip so it's always obvious
+// whether the numbers on screen are the live session, a replay, or stale.
+function liveDataState(){
+  const src=LIVE.transport&&LIVE.transport.source;
+  const feed=LIVE.transport&&LIVE.transport.feed;
+  if(src&&src.kind==="replay") return { text:"REPLAY", color:"var(--cyan)" };
+  if(!LIVE.connected) return { text:"OFFLINE", color:"var(--yellow)" };
+  if(feed&&(!feed.connected||(feed.lastEventAgeSeconds!=null&&feed.lastEventAgeSeconds>60)))
+    return { text:"NO FEED", color:"var(--yellow)" };
+  const st=LIVE.session.status;
+  if(st==="Finished"||st==="Finalised"||st==="Ends") return { text:"ENDED", color:"var(--ink3)" };
+  if(st==="Started"||st==="Aborted") return { text:"LIVE", color:"var(--redk)" };
+  return { text:"WAITING", color:"var(--ink3)" };
 }
 
 /** "1:23:45" / "23:45" / "45" → seconds. The feed's clocks are strings. */
 function parseClockStr(s){
   if(typeof s!=="string"||!s) return 0;
   return s.split(":").reduce((acc,part)=>acc*60+(Number(part)||0),0);
+}
+
+// ---- Next scheduled session ("when is the data live again?") ----------------
+// Fetched from the server (/api/next-session, backed by the season calendar) and
+// shown in Eastern time whenever no session is currently live.
+LIVE.next=null;
+const ET_FMT=new Intl.DateTimeFormat("en-US",{ timeZone:"America/New_York",
+  weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit", timeZoneName:"short" });
+
+/** e.g. "British Grand Prix — Race · Sun, Jul 5, 10:00 AM EDT (in 17h 23m)" */
+function fmtNextSession(){
+  const n=LIVE.next;
+  if(!n||!n.startUtc) return null;
+  const start=Date.parse(n.startUtc);
+  if(!isFinite(start)) return null;
+  const mins=Math.round((start-Date.now())/60000);
+  if(mins<=0) return n.label+" · starting now";
+  const cd=mins>=60? Math.floor(mins/60)+"h "+(mins%60)+"m" : mins+"m";
+  return n.label+" · "+ET_FMT.format(start)+" (in "+cd+")";
+}
+
+async function refreshNextSession(){
+  try {
+    const r=await fetch("/api/next-session");
+    LIVE.next=r.ok? await r.json():null;
+  } catch { LIVE.next=null; }
 }
 
 function liveSnap(){
@@ -937,12 +1001,17 @@ function liveSnap(){
         gapText:c.gapText, x:c.x, y:c.y, onTrack:c.onTrack };
     });
   const s=LIVE.session;
+  // When the shown session is over (or it's a replay), point at the next live one.
+  const state=liveDataState().text;
+  const next=(state==="ENDED"||state==="REPLAY"||state==="NO FEED")? fmtNextSession():null;
+  let subtitle=s.circuit? (s.circuit+(LIVE.weather?` · ${LIVE.weather.rain?"Wet":"Dry"} · ${Math.round(LIVE.weather.trackTemp??0)}°C track`:"")) : null;
+  if(next) subtitle=(subtitle? subtitle+" · ":"")+"Next live: "+next;
   return {
     cars, rc:LIVE.rc, fastest:LIVE.fastest,
     lap:s.lap||1, t:parseClockStr(s.clock),
     flag:s.flag??null, weather:LIVE.weather,
     title: s.gp? (s.gp+(s.session?" — "+s.session:"")) : null,
-    subtitle: s.circuit? (s.circuit+(LIVE.weather?` · ${LIVE.weather.rain?"Wet":"Dry"} · ${Math.round(LIVE.weather.trackTemp??0)}°C track`:"")) : null,
+    subtitle,
   };
 }
 
@@ -1003,8 +1072,44 @@ function drawTrackLive(snap){
 function renderBandLive(hasData){
   const band=$("demoband");
   if(!LIVE.connected){ band.style.display=""; band.textContent="Connecting to Pit Wall service…"; }
-  else if(!hasData){ band.style.display=""; band.textContent="Connected — waiting for session data…"; }
+  else if(!hasData){
+    band.style.display="";
+    const next=fmtNextSession();
+    band.textContent="Connected — waiting for session data…"+(next? " · Next live: "+next : "");
+  }
   else band.style.display="none";
+}
+
+// ---- Session picker: the live feed or any recorded session -----------------
+async function refreshSessionPicker(){
+  const pick=$("sessionPick");
+  let recordings=[];
+  try {
+    const r=await fetch("/api/recordings");
+    if(r.ok) recordings=await r.json();
+  } catch { /* offline — keep whatever the list had */ }
+  const current=pick.value||"live";
+  pick.innerHTML="";
+  const live=document.createElement("option");
+  live.value="live"; live.textContent="● LIVE — F1 feed";
+  pick.appendChild(live);
+  for(const rec of recordings){
+    const o=document.createElement("option");
+    o.value=rec.file;
+    const day=rec.startedAt? new Date(rec.startedAt).toLocaleDateString("en-US",{month:"short",day:"numeric"})+" · ":"";
+    o.textContent="◉ "+day+rec.label;
+    pick.appendChild(o);
+  }
+  pick.value=[...pick.options].some(o=>o.value===current)? current:"live";
+}
+
+/** Keep the picker showing the server's ACTUAL source (authoritative). */
+function syncSessionPicker(){
+  const pick=$("sessionPick");
+  const src=LIVE.transport&&LIVE.transport.source;
+  if(!src||document.activeElement===pick) return;   // don't fight an open dropdown
+  const want=src.kind==="replay"? (src.file||"live"):"live";
+  if(pick.value!==want && [...pick.options].some(o=>o.value===want)) pick.value=want;
 }
 
 // ============================ MODE BOOTSTRAP ================================
@@ -1014,6 +1119,7 @@ if(SIM){
   $("raceSub").textContent="5.278 km · Dry · 24°C track · Simulated";
   pushRC("info","info","Formation lap complete — grid forming");
   pushRC("flag","flag","Race start — GREEN GREEN GREEN");
+  $("sessionPick").style.display="none";            // picker is a live-mode control
 } else {
   $("raceName").textContent="Pit Wall";
   $("raceSub").textContent="Waiting for session…";
@@ -1023,12 +1129,25 @@ if(SIM){
   import("./live-client.js").then(({connectLive})=>{
     const conn=connectLive({
       onEvent: onLiveEvent,
-      onTransport: (t)=>{ LIVE.transport=t; },
-      onStatus: (s)=>{ LIVE.connected=(s==="connected"); },
+      onTransport: (t)=>{ LIVE.transport=t; syncSessionPicker(); },
+      onStatus: (s)=>{ LIVE.connected=(s==="connected"); if(s==="connected") refreshSessionPicker(); },
     });
     LIVE.cmd=conn.cmd;
   }).catch((err)=>{
     $("demoband").textContent="Live client failed to load — try ?sim=1 · "+err;
   });
+
+  // Session picker: switching tells the server to swap sources; the stream resets.
+  refreshSessionPicker();
+  $("sessionPick").onchange=(e)=>{
+    const v=e.target.value;
+    if(v==="live") LIVE.cmd.setSource("live");
+    else LIVE.cmd.setSource("replay", v);
+  };
+  $("sessionPick").onfocus=()=>refreshSessionPicker();
+
+  // "When is the data live again?" — refresh the schedule every 30 minutes.
+  refreshNextSession();
+  setInterval(refreshNextSession, 30*60*1000);
 }
 </script>

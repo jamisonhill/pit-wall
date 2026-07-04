@@ -83,6 +83,28 @@ test('jumpLive snaps to the live edge and clears offset', () => {
   assert.equal(b.behindLiveSeconds(), 0);
 });
 
+test('reset clears the stream and returns to standby, keeping the offset', () => {
+  const clock = makeClock(0);
+  const released = [];
+  const b = new DelayBuffer({ now: clock.now, onRelease: (e) => released.push(e), startOffsetSeconds: 30 });
+  b.push({ id: 'a', ingestTime: 0 });
+  b.start();
+  clock.advance(60_000); b.tick();
+
+  b.reset();
+  const s = b.state();
+  assert.equal(s.started, false);
+  assert.equal(s.paused, true);
+  assert.equal(s.bufferDepthSeconds, 0);
+  assert.equal(s.offsetSeconds, 30);          // the TV-sync preference survives
+
+  // The buffer works normally on the new stream after a reset.
+  const before = released.length;
+  clock.advance(1000); b.push({ id: 'new', ingestTime: clock.now() });
+  b.start(); b.setOffset(0); clock.advance(10); b.tick();
+  assert.deepEqual(released.slice(before).map((e) => e.id), ['new']);
+});
+
 test('prunes events older than maxSeconds behind live', () => {
   const clock = makeClock(0);
   const b = new DelayBuffer({ now: clock.now, onRelease: () => {}, maxSeconds: 10, startOffsetSeconds: 0 });
