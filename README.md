@@ -6,10 +6,10 @@ time-shift** the dashboard so it stays in sync with the race on your TV — no s
 
 Runs as one lean Node container on the home NAS; viewed in a browser on your Mac.
 
-> **Status: scaffold.** The skeleton runs end-to-end today on a built-in simulator. The
-> live F1 feed adapter (`server/signalr/client.js`) plus `decode`/`normalize` are stubbed
-> for Fable 5 to implement. See `FABLE5_PROMPT.md` for the full build brief and `PLAN.md`
-> for the architecture.
+> **Status: feature-complete pipeline.** SignalR ingest (both endpoints), DEFLATE decode,
+> delta merge, normalization, delay engine, recorder, replay, and the live-wired dashboard
+> are all implemented and tested. What remains is validation against a real live session
+> (the feed only exists on race weekends). See `PLAN.md` for the architecture.
 
 ---
 
@@ -20,26 +20,25 @@ npm install
 npm start
 # open http://localhost:8080        (the dashboard)
 # open http://localhost:8080/healthz (feed + transport status JSON)
-npm test                            # unit tests for the delay engine
+npm test                            # unit tests: delay engine, decode, normalize
 ```
 
 With no live feed, the server runs a built-in **sim** race so you can exercise the whole
-pipeline. The dashboard itself also has a richer in-browser simulator at
-`http://localhost:8080/?sim=1` (used for pure frontend work).
+pipeline — press **Start** in the dashboard to begin playback. The dashboard also has a
+richer in-browser simulator at `http://localhost:8080/?sim=1` that needs no backend at all.
 
-## What's built vs. what Fable 5 finishes
+## What's built
 
 | Piece | State |
 |---|---|
-| HTTP static serving + WebSocket server (`server/index.js`) | ✅ working |
-| **Delay engine** (`server/buffer/delayBuffer.js`) + tests | ✅ working, unit-tested |
+| HTTP static serving + WebSocket server (`server/index.js`) | ✅ working, sends catch-up state to (re)connecting clients |
+| **Delay engine** (`server/buffer/delayBuffer.js`) | ✅ working, unit-tested |
 | Transport control channel (`server/control/`) | ✅ working |
 | Raw-stream recorder (`server/recorder/`) | ✅ working |
-| Sim + replay sources (`server/sources/`) | ✅ sim works; replay needs decode/normalize |
-| Dashboard UI (`web/index.html`) | ✅ full UX (currently sim-driven) |
-| Live WS bridge for the UI (`web/live-client.js`) | 🟡 scaffold — wire in milestone 5 |
-| **F1 SignalR adapter** (`server/signalr/client.js`) | 🔴 stub — Fable 5 |
-| **Decode** deltas / **Normalize** topics (`server/decode`, `server/normalize`) | 🔴 stub — Fable 5 |
+| Sim + replay sources (`server/sources/`) | ✅ both working |
+| **F1 SignalR adapter** (`server/signalr/client.js`) | ✅ both endpoints, auto fallback, backoff, watchdog — *awaits a live session for real-world validation* |
+| **Decode** deltas / **Normalize** topics | ✅ implemented, unit-tested against feed-shaped fixtures |
+| Dashboard UI (`web/index.html`) | ✅ live-wired to the server; simulator kept at `?sim=1` |
 
 ## Architecture (short)
 
@@ -54,7 +53,7 @@ in `PLAN.md`.
 
 ## Race-day operation
 
-1. Start the container (or `npm start`) with `SOURCE=signalr` once the feed adapter exists.
+1. Start the container (or `npm start`) with `SOURCE=signalr`.
 2. Open the dashboard on your Mac at `http://192.168.0.9:8080`.
 3. At lights-out, hit **Start**.
 4. Nudge **TV Sync Offset** (+5s / +1s) until the timing tower matches your TV (broadcast
@@ -71,7 +70,7 @@ in `PLAN.md`.
 | `DELAY_MAX_SECONDS` | `300` | Max time-shift / buffer depth |
 | `RECORD_RAW` | `true` | Append the raw feed to `RECORD_DIR` (builds a replay corpus) |
 | `RECORD_DIR` | `./recordings` | Where recordings go |
-| `F1_SIGNALR_MODE` | `core` | `core` (current) or `classic` (legacy endpoint) |
+| `F1_SIGNALR_MODE` | `auto` | `auto` (alternate until one works) \| `core` (current endpoint) \| `classic` (legacy) |
 | `F1_AUTH_TOKEN` | — | F1-account token if the core endpoint requires it |
 | `REPLAY_FILE` / `REPLAY_SPEED` | — / `1` | For `SOURCE=replay` |
 
@@ -93,7 +92,9 @@ Race days are rare. Record one real session (`RECORD_RAW=true`), then replay it 
 SOURCE=replay REPLAY_FILE=./recordings/raw-YYYY-....ndjson npm start
 ```
 
-(Replay needs `decode`/`normalize` implemented first.)
+The recording replays through the exact same decode → normalize → buffer pipeline at
+original pacing (`REPLAY_SPEED` to speed it up), so it doubles as a spoiler-safe
+"watch the race later" mode: replay at 1× and use the dashboard normally.
 
 ## Notes
 
