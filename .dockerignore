@@ -1,0 +1,10 @@
+node_modules
+recordings
+reference
+test
+.git
+.github
+*.md
+!README.md
+.DS_Store
+.env*

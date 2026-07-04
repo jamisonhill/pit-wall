@@ -1,0 +1,37 @@
+# Deploy on the home NAS (Synology, x86_64). Matches your existing pattern:
+# GitHub Actions builds & pushes ghcr.io/jamisonhill/pit-wall:latest, and Watchtower
+# on the NAS auto-updates this container within minutes of each push to main.
+#
+# Location on the NAS: /volume1/docker/pit-wall/docker-compose.yml
+# Start:  cd /volume1/docker/pit-wall && docker-compose up -d
+# View:   http://192.168.0.9:8080
+
+services:
+  pit-wall:
+    image: ghcr.io/jamisonhill/pit-wall:latest
+    container_name: pit-wall
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Data source: 'sim' (default, no feed) | 'signalr' (live) | 'replay' (recorded file).
+      SOURCE: "sim"
+      PORT: "8080"
+      # How far behind live you can hold the view (seconds). 5 min is plenty for TV sync.
+      DELAY_MAX_SECONDS: "300"
+      # Record the raw feed to the mounted volume → builds your replay corpus.
+      RECORD_RAW: "true"
+      RECORD_DIR: "/app/recordings"
+      # For the live feed (once server/signalr/client.js is implemented):
+      # F1_SIGNALR_MODE: "core"        # 'core' (current) or 'classic' (legacy)
+      # F1_AUTH_TOKEN: "..."           # if the core endpoint requires an F1 login token
+      # For replay mode:
+      # SOURCE: "replay"
+      # REPLAY_FILE: "/app/recordings/raw-....ndjson"
+      # REPLAY_SPEED: "1"
+    volumes:
+      # Persist raw recordings across container updates.
+      - ./recordings:/app/recordings
+    labels:
+      # Watchtower watches labelled containers and auto-pulls new images.
+      com.centurylinklabs.watchtower.enable: "true"

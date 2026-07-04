@@ -1,0 +1,19 @@
+{
+  "name": "pit-wall",
+  "version": "0.1.0",
+  "description": "Personal live F1 telemetry dashboard — ingests the F1 Live Timing SignalR feed, buffers it with a manual TV-sync delay, and serves a browser dashboard.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
