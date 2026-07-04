@@ -5,7 +5,7 @@
 
 import fs from 'node:fs';
 import readline from 'node:readline';
-import { normalize } from '../normalize/index.js';
+import { normalize, resetNormalizer } from '../normalize/index.js';
 import { isCompressed, inflateRaw } from '../decode/index.js';
 import { log } from '../logger.js';
 
@@ -29,6 +29,7 @@ export class ReplaySource {
       return;
     }
     log.info('Replaying recorded stream', { file: this.file, speed: this.speed });
+    resetNormalizer(); // a recording starts with its own full snapshot — drop stale state
     const rl = readline.createInterface({ input: fs.createReadStream(this.file) });
     let firstT = null;
     const startWall = Date.now();

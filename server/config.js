@@ -37,8 +37,9 @@ export const config = {
   // Real feed (used by the SignalR adapter Fable 5 will build).
   signalr: {
     // The feed migrated classic → ASP.NET Core around the 2025 Dutch GP.
-    // 'core' uses wss://livetiming.formula1.com/signalrcore; 'classic' the legacy endpoint.
-    mode: process.env.F1_SIGNALR_MODE || 'core',
+    // 'auto' (default) alternates between endpoints until one delivers data;
+    // 'core' pins wss://livetiming.formula1.com/signalrcore; 'classic' the legacy one.
+    mode: process.env.F1_SIGNALR_MODE || 'auto',
     coreUrl: process.env.F1_CORE_URL || 'wss://livetiming.formula1.com/signalrcore',
     classicUrl: process.env.F1_CLASSIC_URL || 'https://livetiming.formula1.com/signalr',
     // Optional F1-account auth token, if the core endpoint requires it.

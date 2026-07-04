@@ -77,7 +77,10 @@ function startSource() {
     source = new SignalRSource({
       config: config.signalr,
       onRaw: (raw, topic) => recorder.write(topic || 'unknown', raw),
-      onHealth: (h) => { health.feedConnected = Boolean(h.connected); },
+      onHealth: (h) => {
+        health.feedConnected = Boolean(h.connected);
+        health.feed = h; // mode / reason detail for /healthz
+      },
       onMessage: ({ topic, data, ingestTime }) => {
         try {
           const decoded = typeof data === 'string' && isCompressed(topic) ? inflateRaw(data) : data;
