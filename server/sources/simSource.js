@@ -29,12 +29,18 @@ export class SimSource {
   }
 
   start() {
-    // Announce the grid once so a live-mode frontend could build its roster.
-    this.emit({ type: 'driverList', ingestTime: Date.now(),
-      payload: this.cars.map(c => ({ num: c.num, code: c.code, team: c.team, colour: c.colour })) });
-
+    this._announceGrid();
     // ~10 Hz update, similar cadence to the real car_data channel.
     this.timer = setInterval(() => this._tick(), 100);
+    // Re-announce the roster periodically — the sim bypasses the normalizer, so it
+    // must provide its own "keyframe" or a late Start finds no roster (the real
+    // sources get this from normalize's keyframeEvents instead).
+    this.rosterTimer = setInterval(() => this._announceGrid(), 30_000);
+  }
+
+  _announceGrid() {
+    this.emit({ type: 'driverList', ingestTime: Date.now(),
+      payload: this.cars.map(c => ({ num: c.num, code: c.code, team: c.team, colour: c.colour })) });
   }
 
   _tick() {
@@ -66,5 +72,8 @@ export class SimSource {
     }
   }
 
-  stop() { if (this.timer) clearInterval(this.timer); }
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.rosterTimer) clearInterval(this.rosterTimer);
+  }
 }
