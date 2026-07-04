@@ -96,6 +96,21 @@ The recording replays through the exact same decode → normalize → buffer pip
 original pacing (`REPLAY_SPEED` to speed it up), so it doubles as a spoiler-safe
 "watch the race later" mode: replay at 1× and use the dashboard normally.
 
+## Live-feed findings (validated 2026-07-04, British GP qualifying)
+
+Connected to the real feed from the NAS during a live session:
+
+- **Core endpoint (`signalrcore`) works without a token** and streams: TimingData,
+  TimingStats, TimingAppData (tyres), DriverList, WeatherData, RaceControlMessages,
+  TrackStatus, SessionInfo/Status/Data, ExtrapolatedClock, TopThree, TeamRadio, Heartbeat.
+  The timing tower, gaps, tyres, weather, flags, and race control all work with this.
+- **`CarData.z` and `Position.z` are withheld unauthenticated** — the car-telemetry
+  gauges and the live track map need an **F1-account token** in `F1_AUTH_TOKEN`.
+  The server logs a loud warning listing the withheld topics when this happens.
+- **The classic endpoint now returns HTTP 401** with no token — auth-gated entirely.
+- The dashboard degrades gracefully either way: panels without data simply stay in
+  their waiting state.
+
 ## Notes
 
 - Personal, non-commercial, single-viewer. Don't publicly expose or redistribute the raw

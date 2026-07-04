@@ -293,7 +293,22 @@ export class SignalRSource {
 
   /** The initial full state for every topic, delivered once per (re)connect. */
   _emitSnapshot(snapshot) {
-    log.info('SignalR: initial snapshot received', { topics: Object.keys(snapshot).length });
+    const granted = Object.keys(snapshot);
+    log.info('SignalR: initial snapshot received', { topics: granted.length });
+    // The feed silently withholds topics it won't serve. Observed 2026-07-04 (British
+    // GP quali): unauthenticated core connections get everything EXCEPT CarData.z and
+    // Position.z — the car-telemetry channels appear to need F1_AUTH_TOKEN now, and
+    // the classic endpoint 401s outright. Say so loudly instead of leaving the track
+    // map mysteriously empty.
+    const missing = TOPICS.filter((t) => !granted.includes(t));
+    if (missing.length) {
+      log.warn('SignalR: topics not granted by the feed', {
+        missing,
+        hint: missing.some((t) => t.endsWith('.z')) && !this.config.authToken
+          ? 'car telemetry channels are withheld — an F1-account token (F1_AUTH_TOKEN) is likely required'
+          : undefined,
+      });
+    }
     for (const [topic, data] of Object.entries(snapshot)) this._emitTopic(topic, data);
   }
 
