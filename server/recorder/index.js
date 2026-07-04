@@ -20,6 +20,14 @@ export class Recorder {
       const name = `raw-${new Date().toISOString().replace(/[:.]/g, '-')}.ndjson`;
       this.filePath = path.join(dir, name);
       this.stream = fs.createWriteStream(this.filePath, { flags: 'a' });
+      // createWriteStream opens lazily — a permission error on the mounted volume
+      // surfaces here as a stream 'error' event, not from the constructor. Without
+      // this handler it would bubble up as an uncaught exception.
+      this.stream.on('error', (err) => {
+        log.error('Recorder stream failed; continuing without recording', { error: String(err) });
+        this.enabled = false;
+        this.stream = null;
+      });
       log.info('Recorder writing raw stream', { file: this.filePath });
     } catch (err) {
       // A recorder failure must never take down ingest — just disable it.
