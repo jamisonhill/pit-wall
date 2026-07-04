@@ -54,7 +54,7 @@ in `PLAN.md`.
 ## Race-day operation
 
 1. Start the container (or `npm start`) with `SOURCE=signalr`.
-2. Open the dashboard on your Mac at `http://192.168.0.9:8080`.
+2. Open the dashboard on your Mac at `http://192.168.0.9:8088`.
 3. At lights-out, hit **Start**.
 4. Nudge **TV Sync Offset** (+5s / +1s) until the timing tower matches your TV (broadcast
    lags the data by ~30–60s).
@@ -82,7 +82,7 @@ Matches your `ghcr.io/jamisonhill/*` + Watchtower pattern:
 2. Copy `docker-compose.yml` to `/volume1/docker/pit-wall/` on the NAS and
    `docker-compose up -d`.
 3. Watchtower auto-updates the container on subsequent pushes.
-4. View at `http://192.168.0.9:8080`.
+4. View at `http://192.168.0.9:8088`.
 
 ## Testing without a live race
 
