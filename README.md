@@ -105,8 +105,16 @@ Connected to the real feed from the NAS during a live session:
   TrackStatus, SessionInfo/Status/Data, ExtrapolatedClock, TopThree, TeamRadio, Heartbeat.
   The timing tower, gaps, tyres, weather, flags, and race control all work with this.
 - **`CarData.z` and `Position.z` are withheld unauthenticated** — the car-telemetry
-  gauges and the live track map need an **F1-account token** in `F1_AUTH_TOKEN`.
+  gauges and the live track map need an **F1 TV account token** in `F1_AUTH_TOKEN`.
   The server logs a loud warning listing the withheld topics when this happens.
+
+  **Getting the token** (lasts ~1 week, so grab it on race morning):
+  1. Sign in at <https://account.formula1.com/#/en/login> (an active F1 TV
+     subscription is required for the telemetry channels).
+  2. DevTools → Application → Cookies → `formula1.com` → copy the value of the
+     **`login-session`** cookie.
+  3. Paste it (the whole cookie value is fine — the server unwraps it) into
+     `F1_AUTH_TOKEN` in the compose file, then `docker-compose up -d --force-recreate`.
 - **The classic endpoint now returns HTTP 401** with no token — auth-gated entirely.
 - The dashboard degrades gracefully either way: panels without data simply stay in
   their waiting state.

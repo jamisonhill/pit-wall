@@ -51,6 +51,24 @@ const MAX_BACKOFF_MS = 60_000;
 const WATCHDOG_INTERVAL_MS = 10_000;
 const STALE_AFTER_MS = 60_000; // no frames (not even keepalives/pings) → reconnect
 
+/**
+ * Accept F1_AUTH_TOKEN in either form: the bare subscription JWT, or the whole
+ * `login-session` cookie value copied from formula1.com after signing in — a
+ * URL-encoded JSON blob like {"data":{"subscriptionToken":"eyJ…"}}. Pasting the
+ * raw cookie is the easy path for a human, so unwrap it here.
+ */
+export function normalizeAuthToken(raw) {
+  if (!raw) return null;
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (decoded.includes('subscriptionToken')) {
+      const token = JSON.parse(decoded)?.data?.subscriptionToken;
+      if (token) return token;
+    }
+  } catch { /* not a cookie blob — treat it as the token itself */ }
+  return raw;
+}
+
 export class SignalRSource {
   /**
    * @param {object} opts
@@ -60,7 +78,7 @@ export class SignalRSource {
    * @param {(health:object)=>void} [opts.onHealth]
    */
   constructor({ config, onMessage, onRaw = () => {}, onHealth = () => {} }) {
-    this.config = config;
+    this.config = { ...config, authToken: normalizeAuthToken(config.authToken) };
     this.onMessage = onMessage;
     this.onRaw = onRaw;
     this.onHealth = onHealth;
