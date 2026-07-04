@@ -155,7 +155,12 @@ const server = http.createServer((req, res) => {
 
   fs.readFile(filePath, (err, buf) => {
     if (err) { res.writeHead(404); res.end('not found'); return; }
-    res.writeHead(200, { 'content-type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': MIME[path.extname(filePath)] || 'application/octet-stream',
+      // Always revalidate: a stale cached dashboard silently runs the old demo
+      // simulator instead of the live feed — worth a tiny request per load.
+      'cache-control': 'no-cache',
+    });
     res.end(buf);
   });
 });
