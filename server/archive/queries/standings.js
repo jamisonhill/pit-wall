@@ -149,7 +149,10 @@ export function driverStandings(asOf, year) {
   const table = all(`
     SELECT rds.position_number AS position, rds.position_text AS positionText,
            rds.driver_id AS driverId, rds.points,
-           d.full_name AS name, d.abbreviation, d.permanent_number AS number,
+           -- driver.name is the name a driver is actually known by (Lewis Hamilton);
+           -- driver.full_name is the legal one (Lewis Carl Davidson Hamilton), which
+           -- belongs on a profile page and is far too long for a table cell.
+           d.name, d.abbreviation, d.permanent_number AS number,
            co.alpha3_code AS nationality,
            -- The team they were driving for in the last race you have seen. Mid-season
            -- swaps are real, so this is a point-in-time fact, not a season constant.
@@ -242,13 +245,13 @@ export function constructorStandings(asOf, year) {
   const contributions = all(`
     SELECT constructorId, driverId, name, abbreviation, SUM(points) AS points FROM (
       SELECT rr.constructor_id AS constructorId, rr.driver_id AS driverId,
-             d.full_name AS name, d.abbreviation, COALESCE(rr.points, 0) AS points
+             d.name, d.abbreviation, COALESCE(rr.points, 0) AS points
       FROM race_result rr
       JOIN race r ON r.id = rr.race_id
       JOIN driver d ON d.id = rr.driver_id
       WHERE r.year = :year AND ${revealed('race')}
       UNION ALL
-      SELECT sr.constructor_id, sr.driver_id, d.full_name, d.abbreviation, COALESCE(sr.points, 0)
+      SELECT sr.constructor_id, sr.driver_id, d.name, d.abbreviation, COALESCE(sr.points, 0)
       FROM sprint_race_result sr
       JOIN race r ON r.id = sr.race_id
       JOIN driver d ON d.id = sr.driver_id

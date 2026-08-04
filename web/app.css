@@ -1,0 +1,323 @@
+/* ==========================================================================
+   PIT WALL — design system
+   ==========================================================================
+   The palette and typography carry over from the original telemetry dashboard:
+   near-black background, one red accent, tabular monospace for anything you'd
+   compare down a column. What changes is the shape — the old dashboard was a
+   fixed 100vh grid that never scrolled, because it showed one live session.
+   This is a reference site you read, so pages scroll and collapse to a single
+   column on a phone.
+
+   Icons are monoline SVG in the SF Symbols idiom (thin rounded strokes,
+   currentColor) — see lib/icons.js. No emoji.
+   ========================================================================== */
+
+:root {
+  --bg:#080a0d; --bg2:#0e1116; --panel:#12161c; --panel2:#171c24;
+  --line:#232a34; --line2:#2e3743;
+  --ink:#eef2f6; --ink2:#aab4c0; --ink3:#6c7885;
+  --red:#e10600; --redk:#ff2d24;
+  --purple:#b14fe8; --green:#38d66a; --yellow:#f5c542; --cyan:#38e1c8;
+
+  --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: -apple-system, system-ui, "Helvetica Neue", Arial, sans-serif;
+
+  --radius:10px;
+  --gutter:16px;
+  --maxw:1240px;
+}
+
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body {
+  margin:0;
+  background:
+    radial-gradient(1200px 700px at 78% -10%, #12202e 0%, transparent 55%),
+    radial-gradient(900px 600px at 0% 110%, #1a0d10 0%, transparent 50%),
+    var(--bg);
+  background-attachment:fixed;
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:14px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+a { color:inherit; text-decoration:none; }
+a:hover { color:var(--redk); }
+h1,h2,h3 { margin:0; font-weight:700; }
+
+/* Numbers you read down a column must line up. */
+.tnum { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+/* Small uppercase label, used for every key/heading in the interface. */
+.k {
+  font-size:9px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--ink3); font-weight:700;
+}
+
+/* ---------- App shell ---------------------------------------------------- */
+
+.shell { min-height:100vh; display:flex; flex-direction:column; }
+
+header.topbar {
+  position:sticky; top:0; z-index:40;
+  background:linear-gradient(180deg,#151a21,#0e1116f2);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.topbar .row1 {
+  max-width:var(--maxw); margin:0 auto;
+  display:flex; align-items:center; gap:14px; padding:10px var(--gutter);
+}
+.brand { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.brand .mark {
+  width:8px; height:26px; background:var(--red); border-radius:2px;
+  box-shadow:0 0 14px rgba(225,6,0,.6);
+}
+.brand b { font-weight:800; letter-spacing:.14em; font-size:13px; text-transform:uppercase; }
+.brand small {
+  color:var(--ink3); letter-spacing:.2em; font-size:8.5px;
+  display:block; text-transform:uppercase;
+}
+
+nav.main { display:flex; gap:2px; margin-left:auto; flex-wrap:wrap; }
+nav.main a {
+  display:flex; align-items:center; gap:6px;
+  padding:7px 11px; border-radius:8px;
+  font-size:12px; font-weight:600; letter-spacing:.03em;
+  color:var(--ink2); border:1px solid transparent;
+}
+nav.main a:hover { background:var(--panel); color:var(--ink); }
+nav.main a.on { background:var(--panel2); border-color:var(--line2); color:var(--ink); }
+nav.main a.on svg { color:var(--redk); }
+nav.main svg { width:15px; height:15px; }
+
+/* The spoiler line, always visible. It is the site's primary control, so it
+   sits in the chrome rather than on a settings page. */
+.linebar {
+  border-top:1px solid var(--line);
+  background:#0c1015;
+}
+.linebar .inner {
+  max-width:var(--maxw); margin:0 auto;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:8px var(--gutter);
+}
+.linebar .lock { display:flex; align-items:center; gap:8px; color:var(--ink2); }
+.linebar .lock svg { width:16px; height:16px; color:var(--green); }
+.linebar .where { font-weight:700; font-size:13px; color:var(--ink); }
+.linebar .hidden-count {
+  padding:2px 8px; border-radius:99px; font-size:10.5px; font-weight:700;
+  letter-spacing:.04em; background:#2a1a12; border:1px solid #4a2c18; color:var(--yellow);
+}
+.linebar .spacer { flex:1; }
+.linebar.live { background:#160c0d; }
+.linebar.live .lock svg { color:var(--redk); }
+
+/* ---------- Buttons ------------------------------------------------------ */
+
+.btn {
+  display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none;
+  padding:7px 13px; border-radius:8px; border:1px solid var(--line2);
+  background:var(--panel2); color:var(--ink);
+  font:inherit; font-size:12.5px; font-weight:700; letter-spacing:.03em;
+  transition:background .12s, border-color .12s;
+}
+.btn:hover { background:#1b2229; border-color:#3c4835; }
+.btn:focus-visible { outline:2px solid var(--cyan); outline-offset:2px; }
+.btn svg { width:15px; height:15px; }
+.btn.primary { background:var(--red); border-color:var(--red); color:#fff; }
+.btn.primary:hover { background:var(--redk); }
+.btn.ghost { background:transparent; }
+.btn.small { padding:4px 9px; font-size:11px; }
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+
+select.pick, input.pick {
+  background:#0f1319; color:var(--ink); border:1px solid var(--line2);
+  border-radius:8px; font:inherit; font-size:12.5px; padding:7px 9px; cursor:pointer;
+}
+select.pick:hover, input.pick:hover { border-color:#3c4835; }
+
+/* ---------- Page layout -------------------------------------------------- */
+
+main.page {
+  flex:1; width:100%; max-width:var(--maxw); margin:0 auto;
+  padding:20px var(--gutter) 60px;
+}
+.page-head { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+.page-head h1 { font-size:24px; letter-spacing:-.01em; }
+.page-head .sub { color:var(--ink3); font-size:12.5px; }
+.page-head .spacer { flex:1; }
+
+.card {
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); margin-bottom:16px; overflow:hidden;
+}
+.card > .head {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:11px 14px; border-bottom:1px solid var(--line); background:var(--bg2);
+}
+.card > .head h2 { font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink2); }
+.card > .head .hint { margin-left:auto; font-size:10.5px; color:var(--ink3); }
+.card > .body { padding:14px; }
+.card > .body.flush { padding:0; }
+
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+.stat-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); gap:1px; background:var(--line); }
+.stat { background:var(--panel); padding:11px 13px; }
+.stat .v { font-weight:800; font-size:22px; line-height:1.1; margin-top:3px; }
+.stat .v small { font-size:11px; color:var(--ink3); font-weight:600; margin-left:3px; }
+
+/* ---------- Tables ------------------------------------------------------- */
+
+table.data { width:100%; border-collapse:collapse; font-size:13px; }
+table.data th {
+  text-align:left; padding:8px 10px; background:var(--bg2);
+  font-size:9px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink3); font-weight:700; border-bottom:1px solid var(--line);
+  position:sticky; top:0;
+}
+table.data td { padding:8px 10px; border-bottom:1px solid #12161c; vertical-align:middle; }
+table.data tr:last-child td { border-bottom:none; }
+table.data tbody tr:hover { background:#12161c; }
+table.data .num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+table.data .pos { text-align:center; font-weight:800; width:38px; }
+
+/* A wide table on a narrow screen scrolls inside its own box — the page itself
+   must never scroll sideways. */
+.scroll-x { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* Team identity: a 4px spine down the left of each row. */
+.teambar { display:inline-block; width:4px; height:22px; border-radius:2px; vertical-align:middle; margin-right:9px; }
+.drv-code { font-weight:800; letter-spacing:.02em; }
+.drv-name { color:var(--ink2); font-size:12px; }
+
+/* Recent-form dots: one per race, coloured by result. */
+.form { display:flex; gap:3px; }
+.form i {
+  width:17px; height:17px; border-radius:4px; display:grid; place-items:center;
+  font-size:8.5px; font-weight:800; font-style:normal; font-family:var(--mono);
+  background:#1c232c; color:var(--ink3);
+}
+.form i.win { background:#3a2f0c; color:var(--yellow); }
+.form i.podium { background:#132a1b; color:var(--green); }
+.form i.points { background:#1a2029; color:var(--ink2); }
+.form i.out { background:#2a1315; color:var(--redk); }
+
+.pill {
+  display:inline-block; padding:2px 7px; border-radius:99px;
+  font-size:10px; font-weight:700; letter-spacing:.05em;
+  background:var(--panel2); border:1px solid var(--line2); color:var(--ink2);
+}
+.pill.alive { background:#132a1b; border-color:#2b6b3f; color:var(--green); }
+.pill.out { background:#1c1113; border-color:#3a2023; color:var(--ink3); }
+
+.muted { color:var(--ink3); }
+.empty { padding:30px 14px; text-align:center; color:var(--ink3); font-size:13px; }
+
+/* ---------- The spoiler gate --------------------------------------------- */
+/* A full-screen takeover, not a dismissible overlay. Nothing renders behind it,
+   because there is nothing to render — the app fetches no data until a line
+   exists. */
+
+.gate {
+  position:fixed; inset:0; z-index:100; overflow-y:auto;
+  background:
+    radial-gradient(900px 600px at 50% -10%, #1a0d10 0%, transparent 60%),
+    var(--bg);
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:40px var(--gutter);
+}
+.gate .sheet { width:100%; max-width:620px; }
+.gate .lede { margin:22px 0 6px; font-size:26px; font-weight:800; letter-spacing:-.015em; }
+.gate .blurb { color:var(--ink2); font-size:14px; margin-bottom:26px; max-width:52ch; }
+
+.choice {
+  display:block; width:100%; text-align:left; cursor:pointer;
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px 16px; margin-bottom:10px; color:inherit; font:inherit;
+  transition:border-color .12s, background .12s;
+}
+.choice:hover { border-color:var(--line2); background:var(--panel2); }
+.choice:focus-visible { outline:2px solid var(--cyan); outline-offset:2px; }
+.choice .title { display:flex; align-items:center; gap:9px; font-weight:700; font-size:14.5px; }
+.choice .title svg { width:17px; height:17px; color:var(--ink3); }
+.choice .why { color:var(--ink3); font-size:12.5px; margin-top:5px; margin-left:26px; }
+.choice.danger { border-color:#3a2023; background:#150e10; }
+.choice.danger:hover { border-color:var(--red); }
+.choice.danger .title svg { color:var(--redk); }
+.choice.open { border-color:var(--line2); background:var(--panel2); }
+
+.choice .expand { margin-top:14px; margin-left:26px; }
+.round-list { display:flex; flex-direction:column; gap:3px; max-height:320px; overflow-y:auto; padding-right:4px; }
+.round-opt {
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:7px 10px; border-radius:7px; border:1px solid transparent;
+  background:transparent; color:inherit; font:inherit; font-size:12.5px; cursor:pointer;
+}
+.round-opt:hover { background:#161c24; border-color:var(--line); }
+.round-opt .rd { font-family:var(--mono); color:var(--ink3); width:34px; flex-shrink:0; }
+.round-opt .nm { flex:1; }
+.round-opt .dt { color:var(--ink3); font-size:11px; font-family:var(--mono); }
+.round-opt[disabled] { opacity:.35; cursor:not-allowed; }
+
+.confirm-live {
+  border:1px solid #3a2023; background:#150e10; border-radius:var(--radius);
+  padding:14px 16px; margin-top:10px;
+}
+.confirm-live p { margin:0 0 12px; color:var(--ink2); font-size:13px; }
+
+/* ---------- Charts ------------------------------------------------------- */
+
+.chartwrap { position:relative; width:100%; }
+.chartwrap canvas { display:block; width:100%; }
+.legend { display:flex; flex-wrap:wrap; gap:10px; padding:10px 14px 2px; }
+.legend span { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink2); }
+.legend i { width:11px; height:3px; border-radius:2px; }
+
+/* Horizontal share bar — a constructor's points split between its drivers. */
+.split { display:flex; height:7px; border-radius:4px; overflow:hidden; background:#1c232c; }
+.split i { display:block; height:100%; }
+
+/* ---------- Notices ------------------------------------------------------ */
+
+.notice {
+  border:1px solid var(--line2); background:var(--panel);
+  border-radius:var(--radius); padding:16px; display:flex; gap:12px; align-items:flex-start;
+}
+.notice svg { width:19px; height:19px; flex-shrink:0; color:var(--yellow); margin-top:1px; }
+.notice .msg { font-size:13px; color:var(--ink2); }
+.notice .msg b { color:var(--ink); display:block; margin-bottom:3px; }
+
+footer.credits {
+  border-top:1px solid var(--line);
+  padding:18px var(--gutter);
+  color:var(--ink3); font-size:11px; line-height:1.7;
+}
+footer.credits .inner { max-width:var(--maxw); margin:0 auto; }
+footer.credits a { text-decoration:underline; text-underline-offset:2px; }
+
+/* ---------- Narrow screens ----------------------------------------------- */
+
+@media (max-width: 860px) {
+  .grid-2 { grid-template-columns:1fr; }
+}
+
+@media (max-width: 720px) {
+  .topbar .row1 { flex-wrap:wrap; gap:10px; }
+  nav.main { margin-left:0; width:100%; overflow-x:auto; flex-wrap:nowrap; padding-bottom:2px; }
+  nav.main a { flex-shrink:0; }
+  .page-head h1 { font-size:20px; }
+  /* Secondary statistics step aside rather than forcing a sideways scroll —
+     a championship table should stay readable on a phone. */
+  .opt-sm { display:none; }
+  table.data th, table.data td { padding:7px 7px; }
+}
+
+@media (max-width: 460px) {
+  .opt-xs { display:none; }
+  .stat .v { font-size:18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition:none !important; animation:none !important; }
+}

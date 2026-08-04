@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <!-- The title must never carry a result either — it says what the site is, and
+       nothing about where the visitor's spoiler line sits. -->
+  <title>Pit Wall — Formula 1 Archive</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <!-- The shell is built by app.js. Nothing is rendered here, because nothing can
+       be rendered until the visitor has set a spoiler line: with no line, the app
+       fetches no data at all and the gate is the only thing on screen. -->
+  <noscript>
+    <div style="padding:40px;font-family:system-ui;color:#eef2f6;background:#080a0d">
+      <h1 style="font-size:20px">Pit Wall needs JavaScript</h1>
+      <p style="color:#aab4c0">The spoiler line is applied to every request this page
+      makes, so the page has to make them itself.</p>
+    </div>
+  </noscript>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
