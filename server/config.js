@@ -49,4 +49,15 @@ export const config = {
   // Replay source file (when SOURCE=replay).
   replayFile: process.env.REPLAY_FILE || null,
   replaySpeed: num('REPLAY_SPEED', 1),
+
+  // The F1DB archive — every statistic the dashboard shows. Downloaded at runtime
+  // onto a mounted volume rather than baked into the image, so it refreshes after
+  // each race weekend without a rebuild. See server/archive/download.js.
+  archive: {
+    dir: process.env.ARCHIVE_DIR || './data',
+    // Check GitHub for a newer F1DB release on boot and on this interval.
+    // Set ARCHIVE_AUTO_UPDATE=false to pin whatever is already on disk.
+    autoUpdate: bool('ARCHIVE_AUTO_UPDATE', true),
+    checkHours: num('ARCHIVE_CHECK_HOURS', 12),
+  },
 };

@@ -29,6 +29,9 @@ import { SignalRSource } from './signalr/client.js';
 import { normalize, keyframeEvents, resetNormalizer } from './normalize/index.js';
 import { isCompressed, inflateRaw } from './decode/index.js';
 import { nextSession } from './schedule.js';
+import { ensureArchive, archiveStatus } from './archive/download.js';
+import { openArchive } from './archive/db.js';
+import { handleApi } from './api/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = path.join(__dirname, '..', 'web');
@@ -249,6 +252,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
 
+  // The stats API (standings, calendar, driver/circuit pages) — everything that
+  // reads the historical archive through the spoiler gate. Returns true when it
+  // owned the request.
+  if (handleApi(url, req, res)) return;
+
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
@@ -257,6 +265,7 @@ const server = http.createServer((req, res) => {
       clients: wss ? wss.clients.size : 0,
       transport: decorateTransport(buffer.state()),
       lastEventAgeMs: health.lastEventAt ? Date.now() - health.lastEventAt : null,
+      archive: { state: archiveStatus.state, version: archiveStatus.version },
     }));
     return;
   }
@@ -277,8 +286,9 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static files from web/. Default to the dashboard.
-  let rel = url.pathname === '/' ? '/index.html' : url.pathname;
+  // Static files from web/. A path ending in '/' means a directory, so serve that
+  // directory's index.html — '/' is the stats dashboard, '/race-room/' is the live one.
+  let rel = url.pathname.endsWith('/') ? `${url.pathname}index.html` : url.pathname;
   const filePath = path.join(WEB_DIR, path.normalize(rel));
   // Prevent path traversal outside web/.
   if (!filePath.startsWith(WEB_DIR)) { res.writeHead(403); res.end('forbidden'); return; }
@@ -309,10 +319,26 @@ wss.on('connection', (socket) => {
   socket.on('error', (err) => log.warn('WS client error', { error: String(err) }));
 });
 
+// ---- The historical archive -------------------------------------------------
+// Fetch (or refresh) the F1DB release and open it. Deliberately not awaited: the
+// server starts serving immediately and the API answers 503 with a download status
+// until the archive lands, which the dashboard renders as an explicit waiting state
+// rather than as an empty page.
+function refreshArchive() {
+  ensureArchive({
+    dir: config.archive.dir,
+    autoUpdate: config.archive.autoUpdate,
+    onReady: (dbPath, version) => openArchive(dbPath, version),
+  }).catch((err) => log.error('Archive refresh failed', { error: String(err) }));
+}
+const archiveTimer = setInterval(refreshArchive, config.archive.checkHours * 60 * 60 * 1000);
+archiveTimer.unref(); // never hold the process open just to check for a new release
+
 // ---- Boot -------------------------------------------------------------------
 server.listen(config.port, () => {
   log.info(`Pit Wall listening on http://0.0.0.0:${config.port}`, { source: config.source });
   log.info(`Dashboard: http://localhost:${config.port}  ·  Health: http://localhost:${config.port}/healthz`);
+  refreshArchive();
   startSource(bootKind, config.replayFile);
 });
 
@@ -321,6 +347,7 @@ function shutdown() {
   log.info('Shutting down…');
   clearInterval(tickTimer);
   clearInterval(keyframeTimer);
+  clearInterval(archiveTimer);
   try { source && source.stop && source.stop(); } catch {}
   recorder.close();
   for (const c of wss.clients) c.terminate();

@@ -24,6 +24,11 @@ services:
       # Record the raw feed to the mounted volume → builds your replay corpus.
       RECORD_RAW: "true"
       RECORD_DIR: "/app/recordings"
+      # The F1DB historical archive (every session since 1950). Downloaded on first
+      # boot and re-checked twice a day; a new release lands after each race weekend.
+      ARCHIVE_DIR: "/app/data"
+      ARCHIVE_AUTO_UPDATE: "true"
+      ARCHIVE_CHECK_HOURS: "12"
       # Live-feed tuning (defaults are fine):
       # F1_SIGNALR_MODE: "auto"        # 'auto' | 'core' (current) | 'classic' (legacy)
       # F1_AUTH_TOKEN: "..."           # if the core endpoint requires an F1 login token
@@ -34,6 +39,9 @@ services:
     volumes:
       # Persist raw recordings across container updates.
       - ./recordings:/app/recordings
+      # Persist the F1DB archive too, so a Watchtower update doesn't trigger a
+      # 15 MB re-download every time.
+      - ./data:/app/data
     labels:
       # Watchtower watches labelled containers and auto-pulls new images.
       com.centurylinklabs.watchtower.enable: "true"

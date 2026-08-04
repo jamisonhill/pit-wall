@@ -4,7 +4,7 @@
   "description": "Personal live F1 telemetry dashboard — ingests the F1 Live Timing SignalR feed, buffers it with a manual TV-sync delay, and serves a browser dashboard.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "scripts": {
     "start": "node server/index.js",

@@ -1,6 +1,8 @@
 node_modules/
 recordings/
 *.ndjson
+# The F1DB archive is downloaded at runtime, never committed (~73 MB).
+data/
 .DS_Store
 npm-debug.log*
 .env
