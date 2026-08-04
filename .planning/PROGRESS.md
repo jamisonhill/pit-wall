@@ -1,49 +1,57 @@
 # Pit Wall — Progress
 
-## Phase 1: Skeleton [DONE]
-- [x] Repo, Dockerfile, ghcr Actions workflow
-- [x] Node service serving the dashboard + WS on one port
-- [x] Delay buffer engine + unit tests, control channel, recorder, sim/replay sources
+## Era 1: live telemetry dashboard [COMPLETE, now the Race Room]
+All 7 milestones done and verified on the NAS: SignalR ingest (both endpoints),
+DEFLATE decode, delta merge, normalization, delay engine, recorder, replay, live-wired
+dashboard, session picker, next-session countdown. Validated against the real feed
+during 2026 British GP qualifying with a working F1 TV token.
 
-## Phase 2: Ingest [DONE]
-- [x] SignalR adapter — core + classic endpoints, auto fallback, backoff, watchdog
-- [x] Raw-DEFLATE decode; raw stream recorded to disk
-- [x] Validated against the REAL feed during 2026 British GP qualifying
+**Superseded, not deleted.** Jamison never watches races live — the whole product was
+optimised for a use case that doesn't happen. The engine now lives at `/race-room/`
+behind an explicit confirmation, where its recorded-session replay is finally the
+right tool: watch Sunday's race on Tuesday, at real pace, without the result reaching
+you first.
 
-## Phase 3: Normalize [DONE]
-- [x] Delta-merge (nested/numeric-key patches, _kf)
-- [x] All topics → typed internal events; unit-tested against feed-shaped fixtures
+## Era 2: spoiler-safe archive [ALL 4 PHASES DONE]
 
-## Phase 4: Delay engine [DONE]
-- [x] Buffer + release loop + transport commands (was largely done in skeleton)
-- [x] reset() for source switching; state keyframes every 45s (prune-proof)
+### Phase 1: the spine [DONE]
+- [x] F1DB archive downloader — GitHub release check, dependency-free ZIP reader,
+      atomic swap onto a mounted volume, 12-hourly refresh
+- [x] `node:sqlite` handle (read-only, prepared-statement cache); Docker → node:24
+- [x] **`server/archive/spoiler.js`** — the session-dated gate every query composes in
+- [x] `/api/archive`, `/api/seasons`, `/api/calendar`, `/api/standings`, `/api/season-context`
+- [x] Web shell, hash router, the gate screen, the persistent spoiler-line bar
+- [x] Championship view: both tables, points split, progression chart, title permutations
 
-## Phase 5: Wire frontend [DONE]
-- [x] Live mode default, simulator kept at ?sim=1
-- [x] All panels fed from real fields; live track map from Position X/Y
-- [x] Transport bar driven by server's authoritative state
-- [x] Catch-up state for (re)connecting clients
+### Phase 2: weekends and people [DONE]
+- [x] Race weekend page — sessions revealed independently, padlock where sealed,
+      grid-to-finish slope chart, classification, pit stops, championship swing
+- [x] Driver page — career recomputed at the line, titles counted safely, season arc,
+      per-circuit record, career heat strip
+- [x] **Teammate head-to-head**, classified-only, quali gated separately from race
+- [x] Constructor page; driver and constructor index pages
 
-## Phase 6: Harden [DONE]
-- [x] Reconnect/backoff, heartbeat watchdog, withheld-topics warning
-- [x] F1_AUTH_TOKEN support (accepts raw login-session cookie; unwrapped server-side)
-- [x] Replay mode + session picker (live ↔ recordings) with reset broadcast
-- [x] Command queue in live client (Safari tab-suspend drop fixed)
-- [x] no-cache static serving; control-command logging
-- [x] 35 unit tests + headless live smoke (20 checks) + picker e2e (11 checks)
+### Phase 3: depth [DONE]
+- [x] Circuit pages — GeoJSON track outlines (equirectangular projection), pole-to-win,
+      overtaking index, DNF rate, lap record, every winner
+- [x] Head-to-head tool — any two drivers, shared races only
+- [x] Records almanac — every leaderboard recounted at the line
 
-## Phase 7: Polish [MOSTLY DONE]
-- [x] README runbook (race-day ops, token flow, feed findings)
-- [x] Session identity chip (LIVE/ENDED/REPLAY/NO FEED/SIM)
-- [x] Next-session countdown in Eastern time (/api/next-session, jolpica calendar)
-- [ ] Optional: Heimdall tile + Cloudflare tunnel route ← not started, optional
-- [ ] Optional: clean up small recording stubs from today's container restarts
+### Phase 4: close out [DONE]
+- [x] **`test/spoilerAudit.test.js`** — source scan + data audit; mutation-tested
+- [x] Race Room reattached behind its own door; "back to the archive" link added
+- [x] README rewritten; F1DB (CC BY 4.0) and f1-circuits (MIT) attributed in the footer
+- [x] `data` volume added to docker-compose
+- [x] 59 tests pass
 
-## Deployment [LIVE on NAS] ← PAUSED HERE
-- [x] Running at http://192.168.0.9:8088 (host 8088 → container 8080)
-- [x] Full telemetry verified with Jamison's F1 TV token (expires ~2026-07-11)
-- [ ] ghcr package still PRIVATE → Watchtower auto-update inactive (needs Jamison's
-      one-click visibility flip; local-build workaround in place meanwhile)
-- [ ] Confirm Jamison's Safari works end-to-end (reload ⌘⌥R + Start) — race day check
+## Verified by eye (headless Chromium, screenshots)
+Gate · Championship (desktop + iPhone) · Calendar · Race weekend · Sealed race ·
+Driver · Circuit (Monaco, Interlagos) · Head to head · Records · Race Room door.
+All three line modes exercised: round, completed-season, and fully-caught-up.
 
-Blockers: none. Next session: race day Sunday 2026-07-05, 10:00 AM EDT.
+## Not done / next
+- [ ] **Not yet deployed to the NAS** — nothing pushed to `main` since the pivot.
+      Needs `docker-compose up -d` after pulling, and the new `./data` volume.
+- [ ] ghcr package still private → Watchtower inactive; local-build path still applies
+      (see RESUME.md)
+- [ ] `F1_AUTH_TOKEN` only matters for the Race Room now, and only during a session

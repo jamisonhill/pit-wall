@@ -1,67 +1,80 @@
-# Resume: Pit Wall (live F1 telemetry dashboard)
+# Resume: Pit Wall (spoiler-safe Formula 1 archive)
 
-**Paused:** 2026-07-04, ~12:40 PM EDT (evening UTC), after British GP qualifying
-**Reason:** Race-day ready — pausing until the British GP race, Sunday 10:00 AM EDT
-**Phase:** all 7 build milestones done; deployed and verified on the NAS
+**Last worked:** 2026-08-04
+**State:** the pivot is complete and committed locally; **not yet deployed to the NAS**
 
-## What is working (verified, not assumed)
+## What this is now
 
-- Container `pit-wall` on the NAS, dashboard at `http://192.168.0.9:8088`, `/healthz` green.
-- Connected to the REAL F1 feed (core endpoint) with Jamison's F1 TV token — full
-  telemetry incl. `CarData.z`/`Position.z` verified streaming during live qualifying.
-- Transport left in **STANDBY** deliberately (he was mid-watching a *delayed* quali
-  broadcast; starting would spoil it). Feed keeps buffering; recordings on disk.
-- Session picker (live ↔ tonight's recordings), Data chip (LIVE/ENDED/REPLAY/NO FEED),
-  next-session countdown in ET ("British Grand Prix — Race · Sun, Jul 5, 10:00 AM EDT").
-- 35 unit tests pass; 20-check headless frontend smoke + 11-check picker e2e pass.
+The live telemetry dashboard turned into a **historical archive with a spoiler line**.
+You declare how far through the season you have watched; the site renders F1 as it
+stood at that moment. The gate is enforced in SQL (`server/archive/spoiler.js`), so a
+result past your line is never selected, never serialised, never sent.
+
+The old live dashboard is intact at `/race-room/`, reached through an explicit
+confirmation. Its recorded-session replay is the genuinely useful part.
+
+Read `README.md` first — it explains the gate, the pages, and the two derived circuit
+statistics. `.planning/PROGRESS.md` has the phase-by-phase record.
+
+## What is verified
+
+- 59 tests pass (`npm test`), including `test/spoilerAudit.test.js`, which was
+  mutation-tested: deleting one `revealed()` call fails it.
+- Every page rendered and checked by eye in headless Chromium, desktop and iPhone width.
+- All three line modes exercised: a specific round, completed-seasons-only, and
+  fully-caught-up.
+- Archive download, unzip, atomic swap and reopen all work from cold.
 
 ## Open items (in priority order)
 
-1. **Race-day verification (Sun ~9:55 AM EDT):** Jamison reloads Safari (**⌘⌥R** — the
-   no-cache header is deployed, so a plain reload also works now) and presses Start at
-   lights-out. `docker logs pit-wall` now logs every control command — if he reports
-   "nothing", check whether `{"cmd":"start"}` arrived. His last session ended before he
-   confirmed a working Start in his browser; the two root causes (Safari command drop,
-   buffer pruning) are fixed and verified headlessly, but not yet confirmed in HIS Safari.
-2. **ghcr package visibility (Jamison, one click):** GitHub → pit-wall repo → Packages →
-   package settings → change visibility to **public**. Until then Watchtower can't pull;
-   deploys use the local-build path (next item).
-3. **F1_AUTH_TOKEN expires ~2026-07-11** (grabbed 2026-07-04). Refresh: sign in at
-   account.formula1.com → DevTools → Application → Cookies → formula1.com → copy
-   `login-session` value into `F1_AUTH_TOKEN` in `/volume1/docker/pit-wall/docker-compose.yml`
-   (server unwraps the cookie blob) → `docker-compose up -d --force-recreate`.
-   Expiry tell: "topics not granted" warning naming the `.z` channels; track map empty.
-4. Optional polish: Heimdall tile + Cloudflare tunnel; delete the tiny recording stubs in
-   `/volume1/docker/pit-wall/recordings/` (several <0.5 MB files from container restarts;
-   the 1.6 MB one is the real quali capture).
+1. **Deploy.** Nothing has been pushed to `main` since the pivot. On the NAS the
+   compose file needs the new `./data` volume and `ARCHIVE_DIR` (both already in the
+   repo's `docker-compose.yml`), then `docker-compose up -d --force-recreate`. First
+   boot downloads ~15 MB from GitHub and unpacks to ~73 MB in `./data`.
+2. **Node 24 is now required** (was 20) — `node:sqlite` needs ≥22.5. The Dockerfile is
+   updated; anything running the old image will fail on import until it is rebuilt.
+3. **ghcr package still private** → Watchtower can't pull. Either flip it to public
+   (GitHub → repo → Packages → pit-wall → visibility) or use the local-build path below.
+4. Optional: the tiny recording stubs in `/volume1/docker/pit-wall/recordings/` are
+   still there (several <0.5 MB files; the 1.6 MB one is the real quali capture).
 
 ## How to deploy (until ghcr is public)
 
 ```bash
-tar czf - --exclude node_modules --exclude .git --exclude recordings --exclude reference . \
-  | ssh nas-home "cat > /tmp/pit-wall-src.tar.gz"
+tar czf - --exclude node_modules --exclude .git --exclude recordings --exclude data \
+  --exclude reference . | ssh nas-home "cat > /tmp/pit-wall-src.tar.gz"
 ssh nas-home "echo '<sudo pw — see NAS-Home skill>' | sudo -S env PATH=/usr/local/bin:/usr/bin:/bin sh -c \
   'tar xzf /tmp/pit-wall-src.tar.gz -C /volume1/docker/pit-wall/src && \
    /usr/local/bin/docker build -q -t ghcr.io/jamisonhill/pit-wall:latest /volume1/docker/pit-wall/src && \
    /usr/local/bin/docker-compose -f /volume1/docker/pit-wall/docker-compose.yml up -d --force-recreate'"
 ```
-(Local dev: allowlisted command shape is `PORT=8099 RECORD_RAW=false node …`.)
 
-## Key decisions made (why things are the way they are)
+Note the added `--exclude data` — the archive is 73 MB and downloads itself.
 
-- Host port **8088** (NAS 8080 taken by lamp-server).
-- **Keyframes** (server re-ingests merged state every 45s) rather than exempting state
-  events from buffer pruning — also gives backward-scrub a rebuild point.
-- Token accepted as the raw `login-session` cookie (server unwraps to subscriptionToken).
-- Classic SignalR endpoint 401s now; adapter default mode `auto` still tries both.
-- The NAS compose file (with the real token) is NOT in git — repo copy has it commented.
-- Recording pauses while in replay mode (recorder is fed by the signalr source only);
-  recordings are per-container-run, so a restart starts a new file.
+## Key decisions (why things are the way they are)
+
+- **The gate is SQL, not UI.** Enforcing it in the browser would mean the data had
+  already been sent. `parseAsOf` throws a 400 when `asOf` is missing, so a forgotten
+  parameter fails loudly instead of quietly serving everything.
+- **The line stores a choice, not a timestamp.** "Fully caught up" has to still mean
+  "now" tomorrow, so `lib/line.js` resolves the mode to an `asOf` at request time.
+- **F1DB's precomputed totals are banned.** `driver.total_race_wins` and friends are
+  all-time figures; printing one announces a race you haven't seen. The audit test
+  fails the build if a query file mentions any of them.
+- **Titles count only from fully-revealed seasons.** A championship is a fact about a
+  season's *final round*, so a season in progress contributes nothing however large
+  the lead.
+- **Overtaking index ranks finishers against each other**, not raw positions gained —
+  otherwise Monaco's attrition makes it look like the best race on the calendar.
+- **Poles come off the starting grid, gated on qualifying**, so a Saturday pole shows
+  up before Sunday's result does.
+- Host port 8088 (NAS 8080 is lamp-server). The NAS compose file with the real
+  `F1_AUTH_TOKEN` is not in git.
 
 ## To resume
 
-1. Read this file + `.planning/PROGRESS.md`; memory file
-   `pit-wall-deployment-state.md` has the NAS/token/feed specifics.
-2. `curl http://192.168.0.9:8088/healthz` — expect feedConnected true, source signalr.
-3. Race day: nothing to deploy; it's ready. Just walk Jamison through reload + Start,
-   and watch `docker logs pit-wall` for the control commands if anything looks off.
+1. Read `README.md`, then this file. Memory file `pit-wall-deployment-state.md` has
+   the NAS, token and feed specifics.
+2. `npm start` → <http://localhost:8080>. First run downloads the archive.
+3. `npm test` should be 59/59.
+4. Highest-value next step is deploying, since none of this is on the NAS yet.
