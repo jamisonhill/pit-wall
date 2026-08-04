@@ -24,6 +24,7 @@ import { renderDrivers, renderConstructors } from './views/people.js';
 import { renderCircuit, renderCircuits } from './views/circuit.js';
 import { renderRecords } from './views/records.js';
 import { renderH2H } from './views/h2h.js';
+import { renderRaceRoom } from './views/raceroom.js';
 
 // ---- Routing ----------------------------------------------------------------
 // `nav: false` keeps detail pages out of the top bar — you reach them by clicking
@@ -37,6 +38,7 @@ const ROUTES = [
   { path: 'circuits', title: 'Circuits', iconName: 'circuit', render: renderCircuits },
   { path: 'h2h', title: 'Head to head', iconName: 'people', render: renderH2H },
   { path: 'records', title: 'Records', iconName: 'list', render: renderRecords },
+  { path: 'live', title: 'Race Room', iconName: 'broadcast', render: renderRaceRoom },
   { path: 'race', nav: false, render: renderRace },
   { path: 'driver', nav: false, render: renderDriver },
   { path: 'constructor', nav: false, render: renderConstructor },

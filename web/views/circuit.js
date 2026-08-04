@@ -15,12 +15,18 @@ import { get } from '../lib/api.js';
 import { teamColour } from '../lib/teams.js';
 import { trackOutline } from '../components/track.js';
 
-/** Plain-English reading of the overtaking index, so the number means something. */
+/**
+ * Plain-English reading of the overtaking index, so the number means something.
+ *
+ * Thresholds calibrated against the modern calendar's all-time figures, which sit
+ * in a narrower band than you might expect: Monaco 1.86 and Catalunya 1.94 at the
+ * bottom, Silverstone and Interlagos around 2.33, Bahrain 2.61 at the top.
+ */
 function overtakingLabel(index) {
   if (index === null) return '—';
   if (index < 2.0) return 'Procession';
-  if (index < 2.35) return 'Track position matters';
-  if (index < 2.6) return 'Racy';
+  if (index < 2.2) return 'Track position matters';
+  if (index < 2.45) return 'Racy';
   return 'Chaotic';
 }
 

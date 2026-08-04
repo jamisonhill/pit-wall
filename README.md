@@ -1,127 +1,203 @@
-# Pit Wall — live F1 telemetry dashboard
+# Pit Wall — a spoiler-safe Formula 1 archive
 
-A personal, single-viewer F1 telemetry dashboard. It ingests the official F1 Live Timing
-feed, holds the data in a **delay buffer**, and lets you **manually start, pause, and
-time-shift** the dashboard so it stays in sync with the race on your TV — no spoilers.
+A personal F1 reference dashboard built around one idea: **the spoiler line**.
 
-Runs as one lean Node container on the home NAS; viewed in a browser on your Mac.
+You tell it how far through the season you have watched. It then shows you Formula 1
+*as it stood at that moment* — the championship tables, every driver's career total,
+the all-time records, everything. Nothing after your line is loaded. Not the
+standings, not a lap record, not a career win count.
 
-> **Status: feature-complete pipeline.** SignalR ingest (both endpoints), DEFLATE decode,
-> delta merge, normalization, delay engine, recorder, replay, and the live-wired dashboard
-> are all implemented and tested. What remains is validation against a real live session
-> (the feed only exists on race weekends). See `PLAN.md` for the architecture.
+Set your line to the end of 2015 and Schumacher still leads the all-time win list,
+because on that day he did.
+
+> **Why.** This started life as a live telemetry dashboard for race day — buffer the
+> feed, time-shift it to match the TV. That job never actually came up: races happen
+> at 10am on Sundays and get watched on Tuesday. So the product turned around. The
+> live engine is still here, behind a door, where its recorded-session replay is
+> finally the right tool for the job.
 
 ---
 
-## Run it locally (right now)
+## Run it
 
 ```bash
 npm install
 npm start
-# open http://localhost:8080        (the dashboard)
-# open http://localhost:8080/healthz (feed + transport status JSON)
-npm test                            # unit tests: delay engine, decode, normalize
+# open http://localhost:8080
+npm test
 ```
 
-With no live feed, the server runs a built-in **sim** race so you can exercise the whole
-pipeline — press **Start** in the dashboard to begin playback. The dashboard also has a
-richer in-browser simulator at `http://localhost:8080/?sim=1` that needs no backend at all.
+First boot downloads the [F1DB](https://github.com/f1db/f1db) archive — every
+Formula 1 session since 1950, about 15 MB compressed. The dashboard shows an
+explicit "fetching the archive" state while that happens, then asks you to set your
+spoiler line. Nothing is fetched until you do.
 
-## What's built
+Needs **Node 22.5 or newer** for the built-in `node:sqlite` driver.
 
-| Piece | State |
+## The spoiler line
+
+It is enforced in SQL, not in the browser. Every query composes one predicate into
+its `WHERE` clause:
+
+```sql
+datetime(race.date || ' ' || COALESCE(race.time, '23:59')) <= :asOf
+```
+
+A result past your line is never selected, never serialised, never sent. You cannot
+spoil yourself by opening the network tab, and a careless bit of front-end code
+cannot leak a result it was never given.
+
+Three rules hold it up (`server/archive/spoiler.js`):
+
+1. **No `asOf`, no data.** An endpoint with no spoiler line answers `400` rather
+   than defaulting to everything. A forgotten parameter has to fail loudly.
+2. **All-time totals are recomputed, never read.** F1DB ships precomputed columns
+   like `driver.total_race_wins`; every one is an *all-time* figure, so printing it
+   would announce a win you haven't watched. `test/spoilerAudit.test.js` fails the
+   build if a query so much as mentions one.
+3. **The line only ever moves by hand.** New rounds show up as "3 newer rounds
+   hidden", never as revealed data.
+
+**Session granularity.** F1DB dates each session separately, so the line cuts
+*between* sessions of the same weekend. Set it to Saturday evening and you can study
+qualifying and the grid while Sunday's result stays sealed. The race page renders a
+padlock where a session hasn't been reached.
+
+Three ways to set it: pick the last Grand Prix you watched, take completed seasons
+only, or unlock everything — which takes two deliberate clicks and says so.
+
+## What's in it
+
+| Page | What it answers |
 |---|---|
-| HTTP static serving + WebSocket server (`server/index.js`) | ✅ working, sends catch-up state to (re)connecting clients |
-| **Delay engine** (`server/buffer/delayBuffer.js`) | ✅ working, unit-tested |
-| Transport control channel (`server/control/`) | ✅ working |
-| Raw-stream recorder (`server/recorder/`) | ✅ working |
-| Sim + replay sources (`server/sources/`) | ✅ both working |
-| **F1 SignalR adapter** (`server/signalr/client.js`) | ✅ both endpoints, auto fallback, backoff, watchdog — *awaits a live session for real-world validation* |
-| **Decode** deltas / **Normalize** topics | ✅ implemented, unit-tested against feed-shaped fixtures |
-| Dashboard UI (`web/index.html`) | ✅ live-wired to the server; simulator kept at `?sim=1` |
+| **Championship** | Both title tables at your line, each team's points split between its drivers, round-by-round progression, and title permutations worked out from the points still available |
+| **Race weekend** | Qualifying, the grid-to-finish slope chart, full classification, pit stops, fastest lap, driver of the day, and how the afternoon moved the championship |
+| **Driver** | Career totals recomputed at your line, season-by-season arc, per-circuit record, every race as a heat strip — and the teammate head-to-head |
+| **Constructor** | Titles, wins, one-twos, engine partners, and everyone who has driven for them |
+| **Circuit** | Track outline, pole-to-win conversion, the overtaking index, DNF rate, lap record, and every winner in the circuit's history |
+| **Head to head** | Any two drivers, compared only over the races they both started |
+| **Records** | Every all-time leaderboard, recounted at your line |
+| **Race Room** | The original live-timing dashboard, behind an explicit confirmation |
 
-## Architecture (short)
+Two numbers worth explaining, because no results table shows them:
+
+- **Pole to win** — how often pole position actually converts here. It says what a
+  Saturday lap is worth at a given track.
+- **Overtaking index** — the average number of places a *finishing* car moves
+  relative to the other finishers. The obvious version (average positions gained)
+  ranks Monaco as the most exciting circuit in the sport, because half the field
+  retires there and everyone who finishes inherits places they never overtook for.
+  Ranking only the finishers against each other cancels that out. Under 2.0 is a
+  procession; over 2.6 is chaos.
+
+## Architecture
 
 ```
-F1 SignalR ──► [ signalr → decode → normalize → DelayBuffer → WebSocket ] ──► browser dashboard
-                                                     └► raw stream → disk (replay corpus)
+                         ┌─ F1DB SQLite archive ──┐
+browser ──/api/*──►  spoiler gate  ──►  queries ──┘
+   │                (server/archive/spoiler.js)
+   └──/ws──►  signalr → decode → normalize → delay buffer   (Race Room only)
 ```
 
-Two clocks: an **ingest clock** (real time, always as live as the feed) and a **playback
-head** that trails the live edge by your chosen **offset** and freezes on pause. Full detail
-in `PLAN.md`.
+```
+server/
+  archive/
+    download.js   fetch + unzip the newest F1DB release onto the data volume
+    db.js         node:sqlite handle, read-only, prepared-statement cache
+    spoiler.js    ★ the gate — every query composes it in
+    queries/      standings · races · people · circuits · records
+  api/index.js    the stats API; rejects any request with no spoiler line
+  schedule.js     upcoming session calendar (jolpica) — not gated, a schedule isn't a result
+  signalr/ buffer/ control/ recorder/ sources/ decode/ normalize/   the Race Room
+web/
+  index.html app.css app.js     shell + hash router
+  lib/                          line · api · dom · icons · teams
+  views/                        gate · standings · calendar · race · driver ·
+                                constructor · circuit · h2h · records · raceroom
+  components/                   chart (canvas) · track (GeoJSON → SVG)
+  data/                         circuit outlines + the id bridge to F1DB
+  race-room/                    the original live dashboard, unchanged
+```
 
-## Race-day operation
+No framework, no build step — plain ES modules served straight off disk. Pages
+scroll and collapse to one column on a phone.
 
-1. Start the container (or `npm start`) with `SOURCE=signalr`.
-2. Open the dashboard on your Mac at `http://192.168.0.9:8088`.
-3. At lights-out, hit **Start**.
-4. Nudge **TV Sync Offset** (+5s / +1s) until the timing tower matches your TV (broadcast
-   lags the data by ~30–60s).
-5. **Pause/Resume** any time — the buffer keeps filling while paused, so you never lose data.
-6. **Jump to Live** to snap back to the real-time edge.
-
-## Configuration (env vars)
+## Configuration
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SOURCE` | `sim` | `sim` \| `signalr` (live) \| `replay` (recorded file) |
-| `PORT` | `8080` | HTTP + WebSocket port |
-| `DELAY_MAX_SECONDS` | `300` | Max time-shift / buffer depth |
-| `RECORD_RAW` | `true` | Append the raw feed to `RECORD_DIR` (builds a replay corpus) |
-| `RECORD_DIR` | `./recordings` | Where recordings go |
-| `F1_SIGNALR_MODE` | `auto` | `auto` (alternate until one works) \| `core` (current endpoint) \| `classic` (legacy) |
-| `F1_AUTH_TOKEN` | — | F1-account token if the core endpoint requires it |
+| `PORT` | `8080` | HTTP + WebSocket |
+| `ARCHIVE_DIR` | `./data` | Where the F1DB archive lives (mount this) |
+| `ARCHIVE_AUTO_UPDATE` | `true` | Check GitHub for a newer F1DB release |
+| `ARCHIVE_CHECK_HOURS` | `12` | How often to check |
+| `SOURCE` | `sim` | Race Room feed: `sim` \| `signalr` \| `replay` |
+| `DELAY_MAX_SECONDS` | `300` | Race Room buffer depth |
+| `RECORD_RAW` / `RECORD_DIR` | `true` / `./recordings` | Record live sessions for replay |
+| `F1_SIGNALR_MODE` | `auto` | `auto` \| `core` \| `classic` |
+| `F1_AUTH_TOKEN` | — | F1 TV token, for car telemetry (see below) |
 | `REPLAY_FILE` / `REPLAY_SPEED` | — / `1` | For `SOURCE=replay` |
+
+## Tests
+
+```bash
+npm test
+```
+
+`test/spoiler.test.js` proves the gate is correct — including the two cases most
+likely to leak: a race with no recorded start time, and qualifying visible on
+Saturday while Sunday stays sealed.
+
+`test/spoilerAudit.test.js` proves everything *behind* the gate actually uses it,
+which is the failure mode that matters. A source scan checks that every query gates
+every results table it touches and that no forbidden all-time column is read; a data
+audit runs every query at a mid-season line and traces each returned row back to the
+race it came from. It has been mutation-tested: deleting a single `revealed()` call
+fails it. The data half needs the downloaded archive and skips loudly without it.
 
 ## Deploy to the NAS
 
-Matches your `ghcr.io/jamisonhill/*` + Watchtower pattern:
-
-1. Push to `main` → GitHub Actions builds & pushes `ghcr.io/jamisonhill/pit-wall:latest`.
-2. Copy `docker-compose.yml` to `/volume1/docker/pit-wall/` on the NAS and
-   `docker-compose up -d`.
-3. Watchtower auto-updates the container on subsequent pushes.
-4. View at `http://192.168.0.9:8088`.
-
-## Testing without a live race
-
-Race days are rare. Record one real session (`RECORD_RAW=true`), then replay it any day:
-
-```bash
-SOURCE=replay REPLAY_FILE=./recordings/raw-YYYY-....ndjson npm start
+```
+GitHub Actions → ghcr.io/jamisonhill/pit-wall:latest → Watchtower → http://192.168.0.9:8088
 ```
 
-The recording replays through the exact same decode → normalize → buffer pipeline at
-original pacing (`REPLAY_SPEED` to speed it up), so it doubles as a spoiler-safe
-"watch the race later" mode: replay at 1× and use the dashboard normally.
+1. Push to `main`.
+2. Copy `docker-compose.yml` to `/volume1/docker/pit-wall/` and `docker-compose up -d`.
+3. The archive downloads itself into `./data` on first boot and refreshes twice a
+   day, so a new race weekend appears without a rebuild.
 
-## Live-feed findings (validated 2026-07-04, British GP qualifying)
+Both `./recordings` and `./data` are mounted volumes — a Watchtower update must not
+trigger a 73 MB re-download.
 
-Connected to the real feed from the NAS during a live session:
+## The Race Room
 
-- **Core endpoint (`signalrcore`) works without a token** and streams: TimingData,
-  TimingStats, TimingAppData (tyres), DriverList, WeatherData, RaceControlMessages,
-  TrackStatus, SessionInfo/Status/Data, ExtrapolatedClock, TopThree, TeamRadio, Heartbeat.
-  The timing tower, gaps, tyres, weather, flags, and race control all work with this.
-- **`CarData.z` and `Position.z` are withheld unauthenticated** — the car-telemetry
-  gauges and the live track map need an **F1 TV account token** in `F1_AUTH_TOKEN`.
-  The server logs a loud warning listing the withheld topics when this happens.
+The original telemetry dashboard, reached through an explicit confirmation because
+it is the one part of the application the spoiler line cannot filter: it shows a
+session unfolding rather than answering a query.
 
-  **Getting the token** (lasts ~1 week, so grab it on race morning):
-  1. Sign in at <https://account.formula1.com/#/en/login> (an active F1 TV
-     subscription is required for the telemetry channels).
-  2. DevTools → Application → Cookies → `formula1.com` → copy the value of the
-     **`login-session`** cookie.
-  3. Paste it (the whole cookie value is fine — the server unwraps it) into
-     `F1_AUTH_TOKEN` in the compose file, then `docker-compose up -d --force-recreate`.
-- **The classic endpoint now returns HTTP 401** with no token — auth-gated entirely.
-- The dashboard degrades gracefully either way: panels without data simply stay in
-  their waiting state.
+**Replaying a recorded session is the good path** — it plays through the same
+pipeline at original pace, so a race you missed on Sunday runs on Tuesday exactly as
+it did live, and the result reaches you only when you get to it.
 
-## Notes
+Live-feed notes, validated during 2026 British GP qualifying:
 
-- Personal, non-commercial, single-viewer. Don't publicly expose or redistribute the raw
-  F1 stream — the feed is undocumented/reverse-engineered and its terms are unclear.
-- The feed's endpoint/auth changed at the 2025 Dutch GP; all that volatility is quarantined
-  in `server/signalr/client.js` by design.
+- The core endpoint (`signalrcore`) streams timing, tyres, weather, race control and
+  session state **without a token**.
+- `CarData.z` and `Position.z` — the telemetry gauges and the track map — are
+  withheld unless `F1_AUTH_TOKEN` is set. Sign in at
+  [account.formula1.com](https://account.formula1.com/#/en/login), copy the
+  `login-session` cookie, paste the whole value into the compose file (the server
+  unwraps it). **It expires after about a week**; the tell is the "topics not
+  granted" warning returning and the track map going empty.
+- The classic endpoint now 401s entirely.
+
+## Credits
+
+- Historical data: **[F1DB](https://github.com/f1db/f1db)**, licensed
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- Track outlines: **[bacinger/f1-circuits](https://github.com/bacinger/f1-circuits)**
+  (MIT), © 2019–2025 Tomislav Bacinger.
+- Session schedules: the [jolpica](https://api.jolpi.ca/) Ergast-compatible API.
+
+Personal and non-commercial; not associated with Formula 1. Don't publicly expose or
+redistribute the raw live timing stream — the feed is reverse-engineered and its
+terms are unclear.
