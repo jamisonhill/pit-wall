@@ -19,6 +19,10 @@ import { parseAsOf, SpoilerError, seasons, seasonCalendar, hiddenRoundCount } fr
 import {
   driverStandings, constructorStandings, pointsProgression, seasonContext,
 } from '../archive/queries/standings.js';
+import { raceWeekend } from '../archive/queries/races.js';
+import {
+  driverProfile, driverIndex, constructorProfile, constructorIndex,
+} from '../archive/queries/people.js';
 import { nextSession } from '../schedule.js';
 import { log } from '../logger.js';
 
@@ -97,6 +101,58 @@ const routes = {
     const asOf = parseAsOf(url.searchParams.get('asOf'));
     const year = readYear(url);
     return { ...seasonContext(asOf, year), hiddenRounds: hiddenRoundCount(asOf, year) };
+  },
+
+  /**
+   * One race weekend. Sessions the line hasn't reached come back as null, so the
+   * page shows a lock rather than an empty table — and the sealed session's data
+   * never leaves the server.
+   */
+  '/api/race': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const year = readYear(url);
+    const round = Number(url.searchParams.get('round'));
+    if (!Number.isInteger(round) || round < 1) throw new SpoilerError('A round number is required.');
+    const weekend = raceWeekend(asOf, year, round);
+    if (!weekend) throw new SpoilerError(`${year} has no round ${round}.`);
+    return weekend;
+  },
+
+  /** A driver's career, every figure recomputed under the line. */
+  '/api/driver': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const id = url.searchParams.get('id');
+    if (!id) throw new SpoilerError('A driver id is required.');
+    const profile = driverProfile(asOf, id);
+    if (!profile) throw new SpoilerError(`No driver known as "${id}".`);
+    return profile;
+  },
+
+  /** Drivers to browse or search. Only those with a start you have seen. */
+  '/api/drivers': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const yearParam = url.searchParams.get('year');
+    return {
+      drivers: driverIndex(asOf, {
+        year: yearParam ? readYear(url) : null,
+        search: url.searchParams.get('q') || null,
+      }),
+    };
+  },
+
+  '/api/constructor': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const id = url.searchParams.get('id');
+    if (!id) throw new SpoilerError('A constructor id is required.');
+    const profile = constructorProfile(asOf, id);
+    if (!profile) throw new SpoilerError(`No constructor known as "${id}".`);
+    return profile;
+  },
+
+  '/api/constructors': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const yearParam = url.searchParams.get('year');
+    return { constructors: constructorIndex(asOf, { year: yearParam ? readYear(url) : null }) };
   },
 };
 

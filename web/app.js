@@ -17,12 +17,23 @@ import { get, ApiError } from './lib/api.js';
 import { renderGate } from './views/gate.js';
 import { renderStandings } from './views/standings.js';
 import { renderCalendar } from './views/calendar.js';
+import { renderRace } from './views/race.js';
+import { renderDriver } from './views/driver.js';
+import { renderConstructor } from './views/constructor.js';
+import { renderDrivers, renderConstructors } from './views/people.js';
 
 // ---- Routing ----------------------------------------------------------------
+// `nav: false` keeps detail pages out of the top bar — you reach them by clicking
+// a name, not by browsing to them.
 
 const ROUTES = [
   { path: 'standings', title: 'Championship', iconName: 'trophy', render: renderStandings },
   { path: 'calendar', title: 'Calendar', iconName: 'calendar', render: renderCalendar },
+  { path: 'drivers', title: 'Drivers', iconName: 'person', render: renderDrivers },
+  { path: 'constructors', title: 'Teams', iconName: 'flag', render: renderConstructors },
+  { path: 'race', nav: false, render: renderRace },
+  { path: 'driver', nav: false, render: renderDriver },
+  { path: 'constructor', nav: false, render: renderConstructor },
 ];
 const DEFAULT_ROUTE = 'standings';
 
@@ -65,7 +76,7 @@ function buildShell() {
 }
 
 function buildNav(activePath) {
-  replace(nav, ...ROUTES.map((route) => el('a', {
+  replace(nav, ...ROUTES.filter((route) => route.nav !== false).map((route) => el('a', {
     href: `#/${route.path}`,
     class: route.path === activePath ? 'on' : null,
   }, icon(route.iconName, 15), route.title)));

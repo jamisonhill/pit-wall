@@ -33,7 +33,10 @@ function roundRow(round, year, line) {
   return el('tr', { style: isLinePosition ? 'background:#141b23' : null },
     el('td.pos.muted', { text: String(round.round) }),
     el('td', null,
-      el('span', { style: 'font-weight:700', text: round.grandPrix }),
+      // Always linked, even for a round past your line: the race page itself
+      // shows a padlock for each sealed session, and qualifying may already be
+      // readable there.
+      el('a', { href: `#/race/${year}/${round.round}`, style: 'font-weight:700', text: round.grandPrix }),
       el('div.muted', { style: 'font-size:11px', text: `${round.circuitName} · ${round.country}` }),
     ),
     el('td.num.muted.opt-xs', { text: shortDate(round.date) }),

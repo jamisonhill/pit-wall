@@ -112,6 +112,70 @@ export function pointsChart({ rounds, series, height = 240 }) {
   return wrap;
 }
 
+/**
+ * Grid on the left, finish on the right, a line between. The single most honest
+ * picture of a Grand Prix: everything that slopes is what the race actually did.
+ *
+ * SVG rather than canvas here — it is drawn once, carries text labels, and stays
+ * sharp at any zoom.
+ *
+ * @param {{driver:string, colour:string, from:number|null, to:number|null,
+ *          retired:boolean}[]} rows
+ */
+export function slopeChart(rows, { rowHeight = 19 } = {}) {
+  const laid = rows.filter((r) => r.from);
+  if (!laid.length) return el('div.empty', { text: 'No starting grid recorded for this race.' });
+
+  const maxPos = Math.max(...laid.flatMap((r) => [r.from, r.to ?? r.from]));
+  const height = maxPos * rowHeight + 34;
+  const leftX = 74, rightX = 226;
+  const y = (pos) => 22 + (pos - 0.5) * rowHeight;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 300 ${height}`);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', String(height));
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Starting grid position compared with finishing position');
+
+  const add = (tag, attrs, text) => {
+    const node = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    if (text !== undefined) node.textContent = text;
+    svg.appendChild(node);
+    return node;
+  };
+
+  add('text', { x: leftX, y: 12, fill: '#6c7885', 'font-size': 9, 'letter-spacing': 1.6,
+    'text-anchor': 'end', 'font-family': 'ui-monospace, Menlo, monospace' }, 'GRID');
+  add('text', { x: rightX, y: 12, fill: '#6c7885', 'font-size': 9, 'letter-spacing': 1.6,
+    'font-family': 'ui-monospace, Menlo, monospace' }, 'FINISH');
+
+  for (const row of laid) {
+    const y1 = y(row.from);
+    // A retirement has nowhere to land, so its line stops short and fades — better
+    // than pretending it finished last.
+    const y2 = row.to ? y(row.to) : y1;
+    add('path', {
+      d: `M ${leftX + 4} ${y1} C ${leftX + 60} ${y1}, ${rightX - 60} ${y2}, ${rightX - 4} ${y2}`,
+      fill: 'none',
+      stroke: row.colour,
+      'stroke-width': 1.8,
+      'stroke-opacity': row.retired ? 0.22 : 0.9,
+      'stroke-dasharray': row.retired ? '3 3' : null,
+    });
+    add('text', { x: leftX, y: y1 + 3.4, fill: '#aab4c0', 'font-size': 10.5,
+      'text-anchor': 'end', 'font-family': 'ui-monospace, Menlo, monospace' },
+      `${row.driver} ${row.from}`);
+    add('text', { x: rightX, y: y2 + 3.4, fill: row.retired ? '#6c7885' : '#eef2f6',
+      'font-size': 10.5, 'font-family': 'ui-monospace, Menlo, monospace' },
+      row.retired ? `${row.driver} DNF` : `${row.to} ${row.driver}`);
+  }
+
+  return el('div.scroll-x', null, el('div', { style: 'min-width:300px' }, svg));
+}
+
 /** The colour key that goes with a pointsChart. */
 export function chartLegend(series) {
   return el('div.legend', null, ...series.map((s) => el('span', null,
