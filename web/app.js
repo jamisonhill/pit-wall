@@ -21,6 +21,9 @@ import { renderRace } from './views/race.js';
 import { renderDriver } from './views/driver.js';
 import { renderConstructor } from './views/constructor.js';
 import { renderDrivers, renderConstructors } from './views/people.js';
+import { renderCircuit, renderCircuits } from './views/circuit.js';
+import { renderRecords } from './views/records.js';
+import { renderH2H } from './views/h2h.js';
 
 // ---- Routing ----------------------------------------------------------------
 // `nav: false` keeps detail pages out of the top bar — you reach them by clicking
@@ -31,9 +34,13 @@ const ROUTES = [
   { path: 'calendar', title: 'Calendar', iconName: 'calendar', render: renderCalendar },
   { path: 'drivers', title: 'Drivers', iconName: 'person', render: renderDrivers },
   { path: 'constructors', title: 'Teams', iconName: 'flag', render: renderConstructors },
+  { path: 'circuits', title: 'Circuits', iconName: 'circuit', render: renderCircuits },
+  { path: 'h2h', title: 'Head to head', iconName: 'people', render: renderH2H },
+  { path: 'records', title: 'Records', iconName: 'list', render: renderRecords },
   { path: 'race', nav: false, render: renderRace },
   { path: 'driver', nav: false, render: renderDriver },
   { path: 'constructor', nav: false, render: renderConstructor },
+  { path: 'circuit', nav: false, render: renderCircuit },
 ];
 const DEFAULT_ROUTE = 'standings';
 

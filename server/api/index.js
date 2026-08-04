@@ -23,6 +23,10 @@ import { raceWeekend } from '../archive/queries/races.js';
 import {
   driverProfile, driverIndex, constructorProfile, constructorIndex,
 } from '../archive/queries/people.js';
+import { circuitProfile, circuitIndex } from '../archive/queries/circuits.js';
+import {
+  driverRecords, constructorRecords, milestones, headToHead,
+} from '../archive/queries/records.js';
 import { nextSession } from '../schedule.js';
 import { log } from '../logger.js';
 
@@ -153,6 +157,41 @@ const routes = {
     const asOf = parseAsOf(url.searchParams.get('asOf'));
     const yearParam = url.searchParams.get('year');
     return { constructors: constructorIndex(asOf, { year: yearParam ? readYear(url) : null }) };
+  },
+
+  /** A circuit: its geometry and character, plus every winner you have seen. */
+  '/api/circuit': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const id = url.searchParams.get('id');
+    if (!id) throw new SpoilerError('A circuit id is required.');
+    const profile = circuitProfile(asOf, id);
+    if (!profile) throw new SpoilerError(`No circuit known as "${id}".`);
+    return profile;
+  },
+
+  '/api/circuits': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    return { circuits: circuitIndex(asOf) };
+  },
+
+  /** The almanac — every leaderboard recomputed at the line. */
+  '/api/records': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    return {
+      drivers: driverRecords(asOf),
+      constructors: constructorRecords(asOf),
+      milestones: milestones(asOf),
+    };
+  },
+
+  /** Any two drivers, compared over the races they both contested. */
+  '/api/head-to-head': (url) => {
+    const asOf = parseAsOf(url.searchParams.get('asOf'));
+    const a = url.searchParams.get('a');
+    const b = url.searchParams.get('b');
+    if (!a || !b) throw new SpoilerError('Two driver ids are required.');
+    if (a === b) throw new SpoilerError('Pick two different drivers.');
+    return { a, b, ...headToHead(asOf, a, b) };
   },
 };
 
