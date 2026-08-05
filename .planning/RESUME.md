@@ -27,29 +27,38 @@ statistics. `.planning/PROGRESS.md` has the phase-by-phase record.
 
 ## Open items (in priority order)
 
-1. **Deploy.** Nothing has been pushed to `main` since the pivot. On the NAS the
-   compose file needs the new `./data` volume and `ARCHIVE_DIR` (both already in the
-   repo's `docker-compose.yml`), then `docker-compose up -d --force-recreate`. First
-   boot downloads ~15 MB from GitHub and unpacks to ~73 MB in `./data`.
+1. ~~**Deploy.**~~ Done 2026-08-04. Pushed to `main`, built on the NAS, and verified
+   in a real browser at both `http://192.168.0.9:8088` and `https://f1.duski.org`.
+   The compose file on the NAS now carries the `./data` volume and the `ARCHIVE_*`
+   vars, with the real `F1_AUTH_TOKEN` preserved (backup alongside it).
 2. **Node 24 is now required** (was 20) — `node:sqlite` needs ≥22.5. The Dockerfile is
    updated; anything running the old image will fail on import until it is rebuilt.
 3. **ghcr package still private** → Watchtower can't pull. Either flip it to public
    (GitHub → repo → Packages → pit-wall → visibility) or use the local-build path below.
+   Until then, pushing to `main` does **not** update the NAS.
 4. Optional: the tiny recording stubs in `/volume1/docker/pit-wall/recordings/` are
    still there (several <0.5 MB files; the 1.6 MB one is the real quali capture).
 
 ## How to deploy (until ghcr is public)
 
+Use an explicit include list, never `--exclude data`. macOS ships bsdtar, whose
+`--exclude` matches trailing path components, so `--exclude data` (and even
+`--exclude ./data`) silently strips `web/data/` too — that directory holds the
+circuit map, and without it the page renders completely blank.
+
 ```bash
-tar czf - --exclude node_modules --exclude .git --exclude recordings --exclude data \
-  --exclude reference . | ssh nas-home "cat > /tmp/pit-wall-src.tar.gz"
+tar czf - Dockerfile .dockerignore package.json package-lock.json server web \
+  | ssh nas-home "cat > /tmp/pit-wall-src.tar.gz"
 ssh nas-home "echo '<sudo pw — see NAS-Home skill>' | sudo -S env PATH=/usr/local/bin:/usr/bin:/bin sh -c \
   'tar xzf /tmp/pit-wall-src.tar.gz -C /volume1/docker/pit-wall/src && \
    /usr/local/bin/docker build -q -t ghcr.io/jamisonhill/pit-wall:latest /volume1/docker/pit-wall/src && \
    /usr/local/bin/docker-compose -f /volume1/docker/pit-wall/docker-compose.yml up -d --force-recreate'"
 ```
 
-Note the added `--exclude data` — the archive is 73 MB and downloads itself.
+The 73 MB archive is not shipped — the container downloads it on first boot into
+the `./data` bind mount. Synology does not create bind-mount source dirs, so
+`/volume1/docker/pit-wall/data` must exist and be `chown 1000:1000` (the container
+runs as `node`), or the download dies with `EACCES`.
 
 ## Key decisions (why things are the way they are)
 
