@@ -15,21 +15,45 @@
   `Found new ghcr.io/jamisonhill/pit-wall:latest image` → stop → create →
   `Updated=1`. Package visibility is a *separate setting* from repository
   visibility, which is what hid this for weeks.
-- **Caveat: it then went quiet.** A push at 12:12:34Z produced a new `latest`
-  (`sha256:0f951c82…`, verified served anonymously) and four subsequent polls
-  (12:15–12:30Z) didn't pick it up — no 403, no update, pit-wall not mentioned, but
-  still `Scanned=9` so it hasn't left the label filter. Unexplained. If it recurs,
-  restart `bug-reporting-watchtower` to clear its state before digging further.
+- **…and then updated exactly once, because it pins the container to a digest.**
+  Diagnosed 2026-08-05. Two pushes since (12:12:34Z, 12:38:20Z) and seven polls
+  (12:15–12:45Z) produced nothing: no 403, no update, pit-wall not even named in the
+  log, yet `Scanned=9` throughout. Portainer shows why — the container's image is
+
+      ghcr.io/jamisonhill/pit-wall:latest@sha256:4ba2c2872e539d8ae2f9f27c29a469ce…
+
+  `4ba2c287…` is the id Watchtower logged when it pulled at 12:10:30. On recreating
+  the container it wrote the reference back **digest-pinned**, and a pinned reference
+  has nothing to update — `:latest` in that string is decorative. Note the pin isn't
+  a registry manifest digest either (the registry served `0f951c82…`, now
+  `ddf34831…`), so it can never match what ghcr advertises.
+- **Suspected shape of the bug, NOT yet confirmed:** a manual compose deploy creates
+  the container tracking the bare tag → Watchtower checks it every cycle → updates it
+  once → pins it → dormant until the next manual deploy. That would make auto-deploy
+  one-shot per manual deploy. The history fits, but it has been observed only once.
 - Race Room still works behind its door; its `F1_AUTH_TOKEN` expires ~weekly and only
   affects live telemetry, not the archive.
 
 ## Next action
-1. **Work out why the second update didn't fire** (see the caveat above). Read the
-   Watchtower log at the next 300s tick; if pit-wall is still unmentioned, restart
-   the watcher and push a trivial commit to retest.
-2. `cognito-api` still 403s in every session — a separate package that is still
+
+**Blocked on being on the home network** — Jamison was off-network when this was
+diagnosed, so none of the below has been run.
+
+1. **Unpin the container.** `docker-compose up -d --force-recreate` on the pit-wall
+   stack. This both deploys the current image (two commits ahead as of 12:38Z) and
+   rewrites the reference back to the bare tag. Verify in Portainer → pit-wall →
+   IMAGE: it should read `ghcr.io/jamisonhill/pit-wall:latest` with **no** `@sha256`.
+2. **Then test whether the pin recurs.** Push a trivial commit and wait two Watchtower
+   ticks. If it updates and then goes silent again, auto-deploy is one-shot and the
+   Watchtower docs need reading for the option that governs this — don't guess a flag
+   name, look it up.
+3. `cognito-api` still 403s in every session — a separate package that is still
    private. Either flip it too, or mount the host's `/root/.docker/config.json` into
    Watchtower at `/config.json`, which fixes it without a visibility change.
+4. **`F1_AUTH_TOKEN` has expired** — the container log shows
+   `topics not granted {"missing":["CarData.z","Position.z","RcmSeries"]}`. Race Room
+   car telemetry and the live track map only; the archive is unaffected. Refresh when
+   a session weekend actually needs it.
 
 ## Gotchas
 - **Server, paths, and the deploy command are deliberately not in this public repo.**

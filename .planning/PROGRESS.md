@@ -60,9 +60,15 @@ All three line modes exercised: round, completed-season, and fully-caught-up.
 ## Not done / next
 - [x] **Auto-deploy unblocked (2026-08-05)** — the ghcr package is now public. Package
       and repository visibility are separate settings, which is what hid this for weeks
-- [ ] **Confirm the chain actually runs.** The blocker is gone but no push has been
-      through `push → Actions → ghcr → Watchtower` since the flip. Verify on the next
-      commit, or read the Watchtower log for a successful pull
+- [x] **Chain confirmed once** — Watchtower's 12:10:30Z poll found the new image,
+      recreated the container, `Updated=1`. `push → Actions → ghcr → Watchtower` works
+- [ ] **Unpin the container** (blocked: off-network). Watchtower recreated pit-wall
+      with a digest-pinned reference (`:latest@sha256:4ba2c287…`), which has nothing
+      to update, so it has ignored two later pushes across seven polls.
+      `docker-compose up -d --force-recreate` restores the bare tag and deploys current
+- [ ] **Then find out whether the pin recurs.** If Watchtower re-pins after every
+      update, auto-deploy is one-shot per manual deploy — read its docs rather than
+      guessing at options
 - [ ] `cognito-api` still 403s — it's a separate private package, fixable by mounting
       the host docker config into Watchtower rather than by another visibility change
 - [ ] `F1_AUTH_TOKEN` only matters for the Race Room now, and only during a session
