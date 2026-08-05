@@ -1,93 +1,35 @@
-# Resume: Pit Wall (spoiler-safe Formula 1 archive)
+# Resume — Pit Wall (spoiler-safe Formula 1 archive)
 
-**Last worked:** 2026-08-04
-**State:** the pivot is complete and committed locally; **not yet deployed to the NAS**
+**Paused:** 2026-08-05 · **Reason:** archive pivot deployed, verified, and liked
+**Phase/Task:** Era 2 complete and live. No phase open.
+**Tree:** clean · **Last commit:** ac2bed8 Correct the record: the package is private
 
-## What this is now
+## State
+- Deployed and confirmed in a real browser on both the LAN port and the public
+  hostname: gate renders, zero console errors, favicon in place.
+- 59 tests pass. The spoiler audit is mutation-tested.
+- `web/data/` (circuit map + GeoJSON) is now committed — an unanchored `data/` in
+  `.gitignore` had kept it out, which blanked every deployed build.
+- **Deploys are manual.** The ghcr *package* is private (the repo is public — separate
+  setting), so Watchtower gets 403 and never updates. Pushing to `main` does nothing
+  to the server.
+- Race Room still works behind its door; its `F1_AUTH_TOKEN` expires ~weekly and only
+  affects live telemetry, not the archive.
 
-The live telemetry dashboard turned into a **historical archive with a spoiler line**.
-You declare how far through the season you have watched; the site renders F1 as it
-stood at that moment. The gate is enforced in SQL (`server/archive/spoiler.js`), so a
-result past your line is never selected, never serialised, never sent.
+## Next action
+1. Close the auto-deploy gap — either flip the ghcr package to public, or mount the
+   host's docker config into the Watchtower container so it can authenticate. The
+   second also fixes `cognito-api`, which fails the same way.
+2. Until then, deploy with the documented manual path (see Gotchas for the trap).
 
-The old live dashboard is intact at `/race-room/`, reached through an explicit
-confirmation. Its recorded-session replay is the genuinely useful part.
-
-Read `README.md` first — it explains the gate, the pages, and the two derived circuit
-statistics. `.planning/PROGRESS.md` has the phase-by-phase record.
-
-## What is verified
-
-- 59 tests pass (`npm test`), including `test/spoilerAudit.test.js`, which was
-  mutation-tested: deleting one `revealed()` call fails it.
-- Every page rendered and checked by eye in headless Chromium, desktop and iPhone width.
-- All three line modes exercised: a specific round, completed-seasons-only, and
-  fully-caught-up.
-- Archive download, unzip, atomic swap and reopen all work from cold.
-
-## Open items (in priority order)
-
-1. ~~**Deploy.**~~ Done 2026-08-04. Pushed to `main`, built on the NAS, and verified
-   in a real browser at both `http://192.168.0.9:8088` and `https://f1.duski.org`.
-   The compose file on the NAS now carries the `./data` volume and the `ARCHIVE_*`
-   vars, with the real `F1_AUTH_TOKEN` preserved (backup alongside it).
-2. **Node 24 is now required** (was 20) — `node:sqlite` needs ≥22.5. The Dockerfile is
-   updated; anything running the old image will fail on import until it is rebuilt.
-3. **ghcr package is still private** → Watchtower cannot pull, so **every deploy is
-   manual** via the path below. The repo is public; the package is a separate setting
-   (`gh api user/packages/container/pit-wall` → `"visibility":"private"`). Do not test
-   this with a `docker pull` on the NAS — `/root/.docker/config.json` has cached ghcr
-   credentials, so the pull succeeds and tells you nothing. Watchtower's log is the
-   truth: `403 Forbidden, auth: "not present"` every 300s. Fix by flipping the package
-   to public, or by mounting that config into Watchtower at `/config.json`.
-4. Optional: the tiny recording stubs in `/volume1/docker/pit-wall/recordings/` are
-   still there (several <0.5 MB files; the 1.6 MB one is the real quali capture).
-
-## How to deploy (until ghcr is public)
-
-Use an explicit include list, never `--exclude data`. macOS ships bsdtar, whose
-`--exclude` matches trailing path components, so `--exclude data` (and even
-`--exclude ./data`) silently strips `web/data/` too — that directory holds the
-circuit map, and without it the page renders completely blank.
-
-```bash
-tar czf - Dockerfile .dockerignore package.json package-lock.json server web \
-  | ssh nas-home "cat > /tmp/pit-wall-src.tar.gz"
-ssh nas-home "echo '<sudo pw — see NAS-Home skill>' | sudo -S env PATH=/usr/local/bin:/usr/bin:/bin sh -c \
-  'tar xzf /tmp/pit-wall-src.tar.gz -C /volume1/docker/pit-wall/src && \
-   /usr/local/bin/docker build -q -t ghcr.io/jamisonhill/pit-wall:latest /volume1/docker/pit-wall/src && \
-   /usr/local/bin/docker-compose -f /volume1/docker/pit-wall/docker-compose.yml up -d --force-recreate'"
-```
-
-The 73 MB archive is not shipped — the container downloads it on first boot into
-the `./data` bind mount. Synology does not create bind-mount source dirs, so
-`/volume1/docker/pit-wall/data` must exist and be `chown 1000:1000` (the container
-runs as `node`), or the download dies with `EACCES`.
-
-## Key decisions (why things are the way they are)
-
-- **The gate is SQL, not UI.** Enforcing it in the browser would mean the data had
-  already been sent. `parseAsOf` throws a 400 when `asOf` is missing, so a forgotten
-  parameter fails loudly instead of quietly serving everything.
-- **The line stores a choice, not a timestamp.** "Fully caught up" has to still mean
-  "now" tomorrow, so `lib/line.js` resolves the mode to an `asOf` at request time.
-- **F1DB's precomputed totals are banned.** `driver.total_race_wins` and friends are
-  all-time figures; printing one announces a race you haven't seen. The audit test
-  fails the build if a query file mentions any of them.
-- **Titles count only from fully-revealed seasons.** A championship is a fact about a
-  season's *final round*, so a season in progress contributes nothing however large
-  the lead.
-- **Overtaking index ranks finishers against each other**, not raw positions gained —
-  otherwise Monaco's attrition makes it look like the best race on the calendar.
-- **Poles come off the starting grid, gated on qualifying**, so a Saturday pole shows
-  up before Sunday's result does.
-- Host port 8088 (NAS 8080 is lamp-server). The NAS compose file with the real
-  `F1_AUTH_TOKEN` is not in git.
-
-## To resume
-
-1. Read `README.md`, then this file. Memory file `pit-wall-deployment-state.md` has
-   the NAS, token and feed specifics.
-2. `npm start` → <http://localhost:8080>. First run downloads the archive.
-3. `npm test` should be 59/59.
-4. Highest-value next step is deploying, since none of this is on the NAS yet.
+## Gotchas
+- **Server, paths, and the deploy command are deliberately not in this public repo.**
+  They live in the `NAS-Home` skill and the `pit-wall-deployment-state` memory.
+- **Never build the source tarball with `--exclude data`.** macOS bsdtar matches
+  trailing path components, so it silently strips `web/data/` too — and even
+  `--exclude ./data` does. Use an explicit include list of the paths to ship.
+- **A `docker pull` on the server is not a package-visibility test** — the root docker
+  config has cached ghcr credentials, so it succeeds against a private package.
+  Use `gh api user/packages/container/pit-wall` or read the Watchtower log.
+- The bind-mount dir for the archive must exist before `up -d` and be owned by uid
+  1000; the container runs as `node` and the download fails with `EACCES` otherwise.

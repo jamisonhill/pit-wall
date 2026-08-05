@@ -49,9 +49,16 @@ Gate · Championship (desktop + iPhone) · Calendar · Race weekend · Sealed ra
 Driver · Circuit (Monaco, Interlagos) · Head to head · Records · Race Room door.
 All three line modes exercised: round, completed-season, and fully-caught-up.
 
+## Phase 5: shipped [DONE]
+- [x] Deployed and verified in a real browser on both the LAN port and the public
+      hostname — gate renders, zero console errors
+- [x] **`web/data/` committed** — an unanchored `data/` in `.gitignore` had excluded the
+      circuit map, so every built image rendered a blank page while local dev worked
+- [x] Favicon: SVG + 32px PNG + full-bleed apple-touch-icon; `.png` added to the MIME map
+- [x] Deploy trap documented: bsdtar's `--exclude data` also strips `web/data/`
+
 ## Not done / next
-- [ ] **Not yet deployed to the NAS** — nothing pushed to `main` since the pivot.
-      Needs `docker-compose up -d` after pulling, and the new `./data` volume.
-- [ ] ghcr package still private → Watchtower inactive; local-build path still applies
-      (see RESUME.md)
+- [ ] **Auto-deploy still broken** — the ghcr *package* is private (repo is public;
+      separate setting), so Watchtower 403s and every deploy is manual. Fix by flipping
+      the package, or by giving Watchtower registry credentials (also fixes cognito-api)
 - [ ] `F1_AUTH_TOKEN` only matters for the Race Room now, and only during a session
