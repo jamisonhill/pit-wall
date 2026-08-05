@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Pit Wall">
+  <!-- The tile carries the app background so the mark reads on any browser chrome,
+       light or dark. Radius matches the interface's --radius, scaled down. -->
+  <rect width="32" height="32" rx="7" fill="#080a0d"/>
+  <!-- The brand mark itself: the red bar from the header (.brand .mark). -->
+  <rect x="5.5" y="7" width="4" height="18" rx="1.6" fill="#e10600"/>
+  <!-- A timing tower falling away behind it — three positions, descending in
+       length and brightness, which is what the wall is actually looking at. -->
+  <rect x="13.5" y="8.5" width="13" height="3" rx="1.5" fill="#eef2f6"/>
+  <rect x="13.5" y="14.5" width="9.5" height="3" rx="1.5" fill="#aab4c0"/>
+  <rect x="13.5" y="20.5" width="6" height="3" rx="1.5" fill="#6c7885"/>
+</svg>

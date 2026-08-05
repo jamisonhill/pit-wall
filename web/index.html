@@ -7,6 +7,11 @@
   <!-- The title must never carry a result either — it says what the site is, and
        nothing about where the visitor's spoiler line sits. -->
   <title>Pit Wall — Formula 1 Archive</title>
+  <!-- Declaring an icon also stops the browser's blind request for /favicon.ico,
+       which was 404ing. SVG first for anything modern, PNG for the rest. -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
