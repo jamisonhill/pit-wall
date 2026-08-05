@@ -58,7 +58,11 @@ All three line modes exercised: round, completed-season, and fully-caught-up.
 - [x] Deploy trap documented: bsdtar's `--exclude data` also strips `web/data/`
 
 ## Not done / next
-- [ ] **Auto-deploy still broken** — the ghcr *package* is private (repo is public;
-      separate setting), so Watchtower 403s and every deploy is manual. Fix by flipping
-      the package, or by giving Watchtower registry credentials (also fixes cognito-api)
+- [x] **Auto-deploy unblocked (2026-08-05)** — the ghcr package is now public. Package
+      and repository visibility are separate settings, which is what hid this for weeks
+- [ ] **Confirm the chain actually runs.** The blocker is gone but no push has been
+      through `push → Actions → ghcr → Watchtower` since the flip. Verify on the next
+      commit, or read the Watchtower log for a successful pull
+- [ ] `cognito-api` still 403s — it's a separate private package, fixable by mounting
+      the host docker config into Watchtower rather than by another visibility change
 - [ ] `F1_AUTH_TOKEN` only matters for the Race Room now, and only during a session

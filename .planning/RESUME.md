@@ -2,7 +2,7 @@
 
 **Paused:** 2026-08-05 · **Reason:** archive pivot deployed, verified, and liked
 **Phase/Task:** Era 2 complete and live. No phase open.
-**Tree:** clean · **Last commit:** ac2bed8 Correct the record: the package is private
+**Tree:** clean
 
 ## State
 - Deployed and confirmed in a real browser on both the LAN port and the public
@@ -10,17 +10,21 @@
 - 59 tests pass. The spoiler audit is mutation-tested.
 - `web/data/` (circuit map + GeoJSON) is now committed — an unanchored `data/` in
   `.gitignore` had kept it out, which blanked every deployed build.
-- **Deploys are manual.** The ghcr *package* is private (the repo is public — separate
-  setting), so Watchtower gets 403 and never updates. Pushing to `main` does nothing
-  to the server.
+- **Auto-deploy is unblocked as of 2026-08-05.** The ghcr package is now public
+  (`gh api user/packages/container/pit-wall` → `"visibility":"public"`). Package
+  visibility is a *separate setting* from repository visibility, which is what hid
+  this for weeks. Not yet observed running end to end — see below.
 - Race Room still works behind its door; its `F1_AUTH_TOKEN` expires ~weekly and only
   affects live telemetry, not the archive.
 
 ## Next action
-1. Close the auto-deploy gap — either flip the ghcr package to public, or mount the
-   host's docker config into the Watchtower container so it can authenticate. The
-   second also fixes `cognito-api`, which fails the same way.
-2. Until then, deploy with the documented manual path (see Gotchas for the trap).
+1. **Confirm auto-deploy actually runs.** The blocker is gone but nothing has been
+   pushed since the flip, so the `push → Actions → ghcr → Watchtower` chain is
+   unproven. On the next commit, wait ~5 minutes (Watchtower polls every 300s) and
+   check the site updated; if it didn't, read the Watchtower log rather than pulling
+   on the server. Keep the manual path in reserve until it's seen working once.
+2. `cognito-api` still 403s — a separate private package. Mounting the host's docker
+   config into Watchtower fixes it without another visibility change.
 
 ## Gotchas
 - **Server, paths, and the deploy command are deliberately not in this public repo.**
