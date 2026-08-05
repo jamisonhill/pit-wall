@@ -2,9 +2,9 @@
 # GitHub Actions builds & pushes ghcr.io/jamisonhill/pit-wall:latest, and Watchtower
 # on the NAS auto-updates this container within minutes of each push to main.
 #
-# Location on the NAS: /volume1/docker/pit-wall/docker-compose.yml
-# Start:  cd /volume1/docker/pit-wall && docker-compose up -d
-# View:   http://192.168.0.9:8088
+# Location on the NAS: the pit-wall project directory.
+# Start:  docker-compose up -d  (from that directory)
+# View:   port 8088 on the NAS
 
 services:
   pit-wall:

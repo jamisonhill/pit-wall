@@ -33,7 +33,7 @@ Grounded in verified research (`reference/research-report.json`) and a working U
 ## 2. Architecture
 
 ```
-  F1 Live Timing (SignalR)                 HOME NAS (192.168.0.9, Docker)                 Your Mac
+  F1 Live Timing (SignalR)                    HOME NAS (Docker)                          Your Mac
  ┌────────────────────────┐   wss    ┌──────────────────────────────────────┐   ws     ┌─────────────┐
  │ livetiming.formula1.com│ ───────► │  INGEST + DELAY SERVICE  (Node.js)   │ ───────► │  Browser    │
  │  signalrcore /signalr  │          │                                       │  :8080   │  dashboard  │
@@ -99,8 +99,8 @@ Grounded in verified research (`reference/research-report.json`) and a working U
 - One small container (Node serves both the WebSocket and the static frontend on one port,
   e.g. `:8080`). Constraint: NAS is **x86_64, ~3.7GB RAM** — keep it a single lean Node
   process; **no Python/pandas**.
-- Access from the Mac at `http://192.168.0.9:8080`. Optional Heimdall tile + Cloudflare
-  tunnel later (both already on the NAS).
+- Access from the Mac at the NAS address on port 8080. Optional Heimdall tile +
+  Cloudflare tunnel later (both already on the NAS).
 
 ---
 
@@ -135,7 +135,7 @@ only persistence needed.
 ## 6. Milestones
 
 1. **Skeleton** — repo, Dockerfile, ghcr Actions workflow, Node service serving the demo
-   static file. Deploy to NAS; confirm `http://192.168.0.9:8080` loads the demo.
+   static file. Deploy to NAS; confirm port 8080 on the NAS loads the demo.
 2. **Ingest** — SignalR connect + Subscribe + DEFLATE decode; log raw stream to disk.
    Validate against a live session (or replay corpus).
 3. **Normalize** — raw topics → internal event schema; per-driver state merge.

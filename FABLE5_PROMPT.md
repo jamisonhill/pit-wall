@@ -164,8 +164,8 @@ Panels (all fed from the internal event schema):
     standard flow; a Watchtower label on the compose service triggers auto-update).
   - `README.md` runbook: how to start on race day, set the offset, use replay mode, and read
     `/healthz`.
-- Accessed from the Mac at `http://192.168.0.9:8080`. (Optional later: a Heimdall tile and a
-  Cloudflare-tunnel route — both already run on this NAS.)
+- Accessed from the Mac at the NAS address on port 8080. (Optional later: a Heimdall tile
+  and a Cloudflare-tunnel route — both already run on this NAS.)
 
 ---
 

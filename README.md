@@ -157,11 +157,11 @@ fails it. The data half needs the downloaded archive and skips loudly without it
 ## Deploy to the NAS
 
 ```
-GitHub Actions → ghcr.io/jamisonhill/pit-wall:latest → Watchtower → http://192.168.0.9:8088
+GitHub Actions → ghcr.io/jamisonhill/pit-wall:latest → Watchtower → the NAS, port 8088
 ```
 
 1. Push to `main`.
-2. Copy `docker-compose.yml` to `/volume1/docker/pit-wall/` and `docker-compose up -d`.
+2. Copy `docker-compose.yml` to the project directory on the NAS and `docker-compose up -d`.
 3. The archive downloads itself into `./data` on first boot and refreshes twice a
    day, so a new race weekend appears without a rebuild.
 
