@@ -10,21 +10,26 @@
 - 59 tests pass. The spoiler audit is mutation-tested.
 - `web/data/` (circuit map + GeoJSON) is now committed — an unanchored `data/` in
   `.gitignore` had kept it out, which blanked every deployed build.
-- **Auto-deploy is unblocked as of 2026-08-05.** The ghcr package is now public
-  (`gh api user/packages/container/pit-wall` → `"visibility":"public"`). Package
-  visibility is a *separate setting* from repository visibility, which is what hid
-  this for weeks. Not yet observed running end to end — see below.
+- **Auto-deploy works, observed 2026-08-05.** The ghcr package went public at 12:09Z;
+  Watchtower's 12:05Z poll still 403'd and its 12:10:30Z poll logged
+  `Found new ghcr.io/jamisonhill/pit-wall:latest image` → stop → create →
+  `Updated=1`. Package visibility is a *separate setting* from repository
+  visibility, which is what hid this for weeks.
+- **Caveat: it then went quiet.** A push at 12:12:34Z produced a new `latest`
+  (`sha256:0f951c82…`, verified served anonymously) and four subsequent polls
+  (12:15–12:30Z) didn't pick it up — no 403, no update, pit-wall not mentioned, but
+  still `Scanned=9` so it hasn't left the label filter. Unexplained. If it recurs,
+  restart `bug-reporting-watchtower` to clear its state before digging further.
 - Race Room still works behind its door; its `F1_AUTH_TOKEN` expires ~weekly and only
   affects live telemetry, not the archive.
 
 ## Next action
-1. **Confirm auto-deploy actually runs.** The blocker is gone but nothing has been
-   pushed since the flip, so the `push → Actions → ghcr → Watchtower` chain is
-   unproven. On the next commit, wait ~5 minutes (Watchtower polls every 300s) and
-   check the site updated; if it didn't, read the Watchtower log rather than pulling
-   on the server. Keep the manual path in reserve until it's seen working once.
-2. `cognito-api` still 403s — a separate private package. Mounting the host's docker
-   config into Watchtower fixes it without another visibility change.
+1. **Work out why the second update didn't fire** (see the caveat above). Read the
+   Watchtower log at the next 300s tick; if pit-wall is still unmentioned, restart
+   the watcher and push a trivial commit to retest.
+2. `cognito-api` still 403s in every session — a separate package that is still
+   private. Either flip it too, or mount the host's `/root/.docker/config.json` into
+   Watchtower at `/config.json`, which fixes it without a visibility change.
 
 ## Gotchas
 - **Server, paths, and the deploy command are deliberately not in this public repo.**
