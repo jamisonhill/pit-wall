@@ -1,68 +1,39 @@
 # Resume — Pit Wall (spoiler-safe Formula 1 archive)
 
-**Paused:** 2026-08-05 · **Reason:** archive pivot deployed, verified, and liked
-**Phase/Task:** Era 2 complete and live. No phase open.
-**Tree:** clean
+**Paused:** 2026-08-05 · **Reason:** deploy fix blocked on being off the home network
+**Phase/Task:** Phase 6 auto-deploy — container needs unpinning
+**Tree:** clean · **Last commit:** 7e6d172 Found it: Watchtower pins the container to a digest
 
 ## State
-- Deployed and confirmed in a real browser on both the LAN port and the public
-  hostname: gate renders, zero console errors, favicon in place.
-- 59 tests pass. The spoiler audit is mutation-tested.
-- `web/data/` (circuit map + GeoJSON) is now committed — an unanchored `data/` in
-  `.gitignore` had kept it out, which blanked every deployed build.
-- **Auto-deploy works, observed 2026-08-05.** The ghcr package went public at 12:09Z;
-  Watchtower's 12:05Z poll still 403'd and its 12:10:30Z poll logged
-  `Found new ghcr.io/jamisonhill/pit-wall:latest image` → stop → create →
-  `Updated=1`. Package visibility is a *separate setting* from repository
-  visibility, which is what hid this for weeks.
-- **…and then updated exactly once, because it pins the container to a digest.**
-  Diagnosed 2026-08-05. Two pushes since (12:12:34Z, 12:38:20Z) and seven polls
-  (12:15–12:45Z) produced nothing: no 403, no update, pit-wall not even named in the
-  log, yet `Scanned=9` throughout. Portainer shows why — the container's image is
-
-      ghcr.io/jamisonhill/pit-wall:latest@sha256:4ba2c2872e539d8ae2f9f27c29a469ce…
-
-  `4ba2c287…` is the id Watchtower logged when it pulled at 12:10:30. On recreating
-  the container it wrote the reference back **digest-pinned**, and a pinned reference
-  has nothing to update — `:latest` in that string is decorative. Note the pin isn't
-  a registry manifest digest either (the registry served `0f951c82…`, now
-  `ddf34831…`), so it can never match what ghcr advertises.
-- **Suspected shape of the bug, NOT yet confirmed:** a manual compose deploy creates
-  the container tracking the bare tag → Watchtower checks it every cycle → updates it
-  once → pins it → dormant until the next manual deploy. That would make auto-deploy
-  one-shot per manual deploy. The history fits, but it has been observed only once.
-- Race Room still works behind its door; its `F1_AUTH_TOKEN` expires ~weekly and only
-  affects live telemetry, not the archive.
+- The archive itself is done, deployed, and working. 59 tests pass. Nothing about the
+  app is outstanding — this phase is purely about the deploy pipeline.
+- Auto-deploy **worked exactly once** (12:10:30Z) after the ghcr package went public,
+  then went silent. Package visibility is separate from repo visibility.
+- **Cause found:** Watchtower recreated the container with a digest-pinned image,
+  `ghcr.io/jamisonhill/pit-wall:latest@sha256:4ba2c287…`. A pinned reference has
+  nothing to update, so pit-wall vanished from seven polls while still in `Scanned=9`.
+- The running container is therefore **two commits behind** (`64eab1d`); `7e6d172` is
+  pushed and built but not deployed.
+- `F1_AUTH_TOKEN` has expired — `CarData.z`/`Position.z`/`RcmSeries` not granted.
+  Race Room telemetry only; the archive doesn't touch the feed.
 
 ## Next action
-
-**Blocked on being on the home network** — Jamison was off-network when this was
-diagnosed, so none of the below has been run.
-
-1. **Unpin the container.** `docker-compose up -d --force-recreate` on the pit-wall
-   stack. This both deploys the current image (two commits ahead as of 12:38Z) and
-   rewrites the reference back to the bare tag. Verify in Portainer → pit-wall →
-   IMAGE: it should read `ghcr.io/jamisonhill/pit-wall:latest` with **no** `@sha256`.
-2. **Then test whether the pin recurs.** Push a trivial commit and wait two Watchtower
-   ticks. If it updates and then goes silent again, auto-deploy is one-shot and the
-   Watchtower docs need reading for the option that governs this — don't guess a flag
-   name, look it up.
-3. `cognito-api` still 403s in every session — a separate package that is still
-   private. Either flip it too, or mount the host's `/root/.docker/config.json` into
-   Watchtower at `/config.json`, which fixes it without a visibility change.
-4. **`F1_AUTH_TOKEN` has expired** — the container log shows
-   `topics not granted {"missing":["CarData.z","Position.z","RcmSeries"]}`. Race Room
-   car telemetry and the live track map only; the archive is unaffected. Refresh when
-   a session weekend actually needs it.
+1. On the home network: `docker-compose up -d --force-recreate` on the pit-wall stack.
+   Unpins the container *and* deploys the three pending commits in one go.
+2. Verify in Portainer → pit-wall → IMAGE: must read a bare
+   `ghcr.io/jamisonhill/pit-wall:latest` with **no** `@sha256`.
+3. Push a trivial commit, wait two 300s ticks, and see whether Watchtower re-pins. If
+   it does, auto-deploy is one-shot per manual deploy — read Watchtower's docs.
 
 ## Gotchas
+- **Portainer's Recreate button won't fix the pin** — it reuses the container's
+  existing (pinned) reference. The compose file is what holds the bare tag. The stack
+  also shows as external/limited in Portainer, so the Stacks editor is unavailable.
 - **Server, paths, and the deploy command are deliberately not in this public repo.**
   They live in the `NAS-Home` skill and the `pit-wall-deployment-state` memory.
-- **Never build the source tarball with `--exclude data`.** macOS bsdtar matches
-  trailing path components, so it silently strips `web/data/` too — and even
-  `--exclude ./data` does. Use an explicit include list of the paths to ship.
-- **A `docker pull` on the server is not a package-visibility test** — the root docker
-  config has cached ghcr credentials, so it succeeds against a private package.
-  Use `gh api user/packages/container/pit-wall` or read the Watchtower log.
-- The bind-mount dir for the archive must exist before `up -d` and be owned by uid
-  1000; the container runs as `node` and the download fails with `EACCES` otherwise.
+- **Never build the source tarball with `--exclude data`** — bsdtar matches trailing
+  path components and silently strips `web/data/` too, blanking the deployed site.
+- **A `docker pull` on the server proves nothing about package visibility** — the root
+  docker config has cached ghcr credentials. Use `gh api` or the Watchtower log.
+- Portainer's Created column is local time (EDT); the log is UTC. That four-hour
+  offset cost two wrong readings during this debug.
