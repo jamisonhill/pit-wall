@@ -33,9 +33,13 @@ statistics. `.planning/PROGRESS.md` has the phase-by-phase record.
    vars, with the real `F1_AUTH_TOKEN` preserved (backup alongside it).
 2. **Node 24 is now required** (was 20) — `node:sqlite` needs ≥22.5. The Dockerfile is
    updated; anything running the old image will fail on import until it is rebuilt.
-3. ~~**ghcr package private.**~~ Public as of 2026-08-04; an anonymous pull from the
-   NAS succeeds. Watchtower (`--interval 300 --label-enable`) now carries pushes to
-   the NAS within ~5 minutes, so the manual path below is only for urgent pushes.
+3. **ghcr package is still private** → Watchtower cannot pull, so **every deploy is
+   manual** via the path below. The repo is public; the package is a separate setting
+   (`gh api user/packages/container/pit-wall` → `"visibility":"private"`). Do not test
+   this with a `docker pull` on the NAS — `/root/.docker/config.json` has cached ghcr
+   credentials, so the pull succeeds and tells you nothing. Watchtower's log is the
+   truth: `403 Forbidden, auth: "not present"` every 300s. Fix by flipping the package
+   to public, or by mounting that config into Watchtower at `/config.json`.
 4. Optional: the tiny recording stubs in `/volume1/docker/pit-wall/recordings/` are
    still there (several <0.5 MB files; the 1.6 MB one is the real quali capture).
 
