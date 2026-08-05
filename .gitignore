@@ -2,7 +2,9 @@ node_modules/
 recordings/
 *.ndjson
 # The F1DB archive is downloaded at runtime, never committed (~73 MB).
-data/
+# Anchored with a leading slash: an unanchored `data/` also matches `web/data/`,
+# which holds the committed circuit-map source and must ship with the image.
+/data/
 .DS_Store
 npm-debug.log*
 .env
