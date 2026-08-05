@@ -248,7 +248,7 @@ async function listRecordings() {
 // ---- HTTP server: static dashboard + /healthz ------------------------------
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.geojson': 'application/geo+json',
-  '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png' };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
